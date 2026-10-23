@@ -81,6 +81,9 @@
                     window.steps = remoteSteps;
                     window.saveStepsLocally();
                     window.render();
+                } else if (window.steps && window.steps.length > 0) {
+                    // Se a nuvem estiver vazia mas houver passos locais, envia para a nuvem
+                    window.steps.forEach(s => window.saveStepToCloud(s));
                 }
             }, (error) => {
                 console.warn("Erro no Firestore:", error);
