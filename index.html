@@ -19,17 +19,16 @@
     <!-- html2canvas para exportar a colagem -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-    <!-- Leaflet CSS e JS para Mapa Real Interativo com Arraste e Zoom -->
+    <!-- Leaflet CSS e JS para Mapa Real Interativo -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Firebase App & Firestore via CDN (Módulo ES) -->
+    <!-- Firebase App & Firestore via CDN -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, collection, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Configurações Reais do Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyD54p2WxB8Fp1mZFUNtovyTixUdSwD7oZE",
             authDomain: "roteiro-sp-a4f9f.firebaseapp.com",
@@ -43,8 +42,8 @@
         let db = null;
         let auth = null;
         window.currentUser = null;
+        let unsubscribeSync = null;
 
-        // Inicialização do Firebase Sync
         window.initFirebaseSync = async function() {
             try {
                 const app = initializeApp(firebaseConfig);
@@ -56,7 +55,11 @@
                         window.currentUser = user;
                         window.setupRealtimeSync();
                     } else {
-                        await signInAnonymously(auth);
+                        try {
+                            await signInAnonymously(auth);
+                        } catch(e) {
+                            console.error("Erro na autenticação anônima:", e);
+                        }
                     }
                 });
             } catch (err) {
@@ -64,13 +67,13 @@
             }
         };
 
-        // Sincronização dos Passos e Dados em Tempo Real
         window.setupRealtimeSync = function() {
             if (!db) return;
+            if (unsubscribeSync) unsubscribeSync();
 
             const collectionRef = collection(db, 'roteiro_passos');
 
-            onSnapshot(collectionRef, (snapshot) => {
+            unsubscribeSync = onSnapshot(collectionRef, (snapshot) => {
                 const remoteSteps = [];
                 snapshot.forEach(docSnap => {
                     remoteSteps.push({ id: docSnap.id, ...docSnap.data() });
@@ -82,8 +85,8 @@
                     window.saveStepsLocally();
                     window.render();
                 } else if (window.steps && window.steps.length > 0) {
-                    // Se a nuvem estiver vazia mas houver passos locais, envia para a nuvem
-                    window.steps.forEach(s => window.saveStepToCloud(s));
+                    // Envia os passos padrão iniciais se a coleção remota estiver vazia
+                    window.steps.forEach(step => window.saveStepToCloud(step));
                 }
             }, (error) => {
                 console.warn("Erro no Firestore:", error);
@@ -227,7 +230,6 @@
             </div>
 
             <div class="flex items-center justify-between gap-2 pt-2 border-t border-stone-100">
-                <!-- Perfil do Usuário Logado -->
                 <button onclick="openProfileModal()" class="flex items-center gap-2 hover:bg-stone-100 p-1 rounded-xl transition">
                     <div id="headerUserAvatar" class="w-7 h-7 rounded-full bg-amber-500 border border-stone-200 text-[11px] font-bold text-white flex items-center justify-center overflow-hidden shrink-0">
                         <span id="headerUserInitials">?</span>
@@ -272,7 +274,6 @@
                 </button>
             </div>
 
-            <!-- Container do Mapa Real Leaflet -->
             <div class="flex-1 w-full bg-stone-100 rounded-2xl relative overflow-hidden border border-stone-200">
                 <div id="leafletMapContainer" class="w-full h-full min-h-[300px] z-10"></div>
             </div>
@@ -444,7 +445,6 @@
                         class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-xs"></textarea>
                 </div>
 
-                <!-- Seleção de Fotos do Dispositivo -->
                 <div>
                     <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Fotos do Passo</label>
                     <input type="file" id="stepPhotoFiles" accept="image/*" multiple onchange="previewStepPhotos(event)"
@@ -452,7 +452,6 @@
                     <div id="stepPhotosPreview" class="grid grid-cols-4 gap-2 mt-2"></div>
                 </div>
 
-                <!-- Post-it com Seletor de Cores -->
                 <div>
                     <div class="flex justify-between items-center mb-1.5">
                         <label class="block text-xs font-bold text-stone-600 uppercase">Post-it (Anotações)</label>
