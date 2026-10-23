@@ -19,6 +19,10 @@
     <!-- html2canvas para exportar a colagem -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
+    <!-- Leaflet CSS e JS para Mapa Real Interativo com Arraste e Zoom -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <!-- Firebase App & Firestore via CDN (Módulo ES) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -183,6 +187,11 @@
         .modal-active > div {
             transform: translateY(0) scale(1) !important;
         }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            padding: 4px;
+        }
     </style>
 </head>
 <body class="h-full flex flex-col font-sans bg-stone-100 text-stone-800 antialiased">
@@ -222,21 +231,64 @@
                     </div>
                     <div class="text-left leading-tight">
                         <p class="text-[9px] uppercase tracking-wider font-extrabold text-stone-400">Viajante</p>
-                        <p id="headerUserName" class="text-xs font-bold text-stone-800 truncate max-w-[120px]">Carregando...</p>
+                        <p id="headerUserName" class="text-xs font-bold text-stone-800 truncate max-w-[100px]">Carregando...</p>
                     </div>
                     <i class="fa-solid fa-chevron-down text-[10px] text-stone-400 ml-0.5"></i>
                 </button>
 
                 <div class="flex items-center gap-1.5">
-                    <button onclick="generateCollage()" class="flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 active:scale-95 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition">
+                    <button onclick="openMapModal()" class="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition">
+                        <i class="fa-solid fa-map-location-dot text-amber-300"></i>
+                        <span>Mapa</span>
+                    </button>
+
+                    <button onclick="generateCollage()" class="flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 active:scale-95 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-xs transition">
                         <i class="fa-solid fa-images text-amber-400"></i>
-                        <span>Gerar Story</span>
+                        <span>Story</span>
                     </button>
                 </div>
             </div>
 
         </div>
     </header>
+
+    <!-- Modal do Mapa do Roteiro -->
+    <div id="mapModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 p-2 sm:p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-2xl rounded-3xl p-4 shadow-2xl flex flex-col h-[85vh] text-stone-800 transform scale-95 transition-transform duration-300">
+            
+            <div class="flex justify-between items-center mb-2 pb-2 border-b border-stone-100">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-map-location-dot text-emerald-600 text-lg"></i>
+                    <div>
+                        <h3 class="text-sm font-bold text-stone-900">Mapa Interativo de Rotas</h3>
+                        <p class="text-[10px] text-stone-500">Arraste, dê zoom e toque nos marcadores para explorar o roteiro</p>
+                    </div>
+                </div>
+                <button onclick="closeMapModal()" class="w-8 h-8 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Container do Mapa Real Leaflet -->
+            <div class="flex-1 w-full bg-stone-100 rounded-2xl relative overflow-hidden border border-stone-200">
+                <div id="leafletMapContainer" class="w-full h-full min-h-[300px] z-10"></div>
+            </div>
+
+            <div id="mapStepDetails" class="mt-3 p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs hidden">
+                <div class="flex items-center justify-between font-bold text-stone-900 mb-1">
+                    <span id="mapStepTitle" class="truncate max-w-[200px]">Passo Selecionado</span>
+                    <span id="mapStepBadge" class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full text-[10px]">Passo 1</span>
+                </div>
+                <div class="flex justify-between items-center text-stone-500 text-[11px]">
+                    <span id="mapStepTime">00:00</span>
+                    <a id="mapStepLink" href="#" target="_blank" class="text-emerald-700 font-bold hover:underline flex items-center gap-1">
+                        Abrir GPS <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    </div>
 
     <!-- Modal de Apresentação / Boas-Vindas -->
     <div id="welcomeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 p-4">
@@ -339,7 +391,7 @@
         </button>
     </div>
 
-    <!-- Modal de Criar / Editar Passo (Ajustado Mobile) -->
+    <!-- Modal de Criar / Editar Passo -->
     <div id="stepModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs opacity-0 pointer-events-none transition-all duration-300">
         <div class="bg-white border border-stone-200 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl transform translate-y-full sm:translate-y-0 sm:scale-95 transition-transform duration-300 max-h-[85vh] sm:max-h-[90vh] overflow-y-auto no-scrollbar text-stone-800">
             
@@ -397,7 +449,7 @@
                     <div id="stepPhotosPreview" class="grid grid-cols-4 gap-2 mt-2"></div>
                 </div>
 
-                <!-- Post-it com Seletor de Cores Funcionando -->
+                <!-- Post-it com Seletor de Cores -->
                 <div>
                     <div class="flex justify-between items-center mb-1.5">
                         <label class="block text-xs font-bold text-stone-600 uppercase">Post-it (Anotações)</label>
@@ -521,7 +573,8 @@
         let tripSubtitle = localStorage.getItem('scavenger_trip_subtitle') || 'Roteiro Colaborativo';
         window.steps = [];
         let currentEditingPhotos = [];
-        let activeViewerPhoto = null; // Guardar foto aberta no modal ampliado
+        let activeViewerPhoto = null;
+        let leafletMapInstance = null;
 
         let userProfile = { name: '', avatar: '' };
 
@@ -841,7 +894,44 @@
             }, 250);
         }
 
-        // Modal de Visualização Ampliada da Foto com Curtidas
+        function toggleChecklistItem(stepId, itemId) {
+            const step = window.steps.find(s => s.id === stepId);
+            if (step && step.checklist) {
+                const item = step.checklist.find(c => c.id === itemId);
+                if (item) {
+                    item.checked = !item.checked;
+                    saveSteps();
+                    render();
+                }
+            }
+        }
+
+        function addComment(stepId) {
+            if (!userProfile.name) {
+                showWelcomeModal();
+                return;
+            }
+            const input = document.getElementById(`commentInput-${stepId}`);
+            if (!input) return;
+            const text = input.value.trim();
+            if (!text) return;
+
+            const step = window.steps.find(s => s.id === stepId);
+            if (step) {
+                if (!step.comments) step.comments = [];
+                step.comments.push({
+                    id: Date.now().toString(),
+                    authorName: userProfile.name,
+                    authorAvatar: userProfile.avatar || '',
+                    text: text,
+                    createdAt: Date.now()
+                });
+                input.value = '';
+                saveSteps();
+                render();
+            }
+        }
+
         function openPhotoViewer(stepId, photoId) {
             const step = window.steps.find(s => s.id === stepId);
             if (!step || !step.groupPhotos) return;
@@ -973,35 +1063,140 @@
             });
         }
 
-        function toggleChecklistItem(stepId, itemId) {
-            const step = window.steps.find(s => s.id === stepId);
-            if (step) {
-                const item = (step.checklist || []).find(c => c.id === itemId);
-                if (item) { item.checked = !item.checked; saveSteps(); render(); }
-            }
+        function openMapModal() {
+            const modal = document.getElementById('mapModal');
+            modal.classList.add('modal-active');
+            
+            setTimeout(() => {
+                initRealLeafletMap();
+            }, 150);
         }
 
-        function addComment(stepId) {
-            if (!userProfile.name) {
-                showWelcomeModal();
+        function closeMapModal() {
+            const modal = document.getElementById('mapModal');
+            modal.classList.remove('modal-active');
+            document.getElementById('mapStepDetails').classList.add('hidden');
+        }
+
+        function extractCoordsFromStep(step, index, total) {
+            if (step.mapsUrl) {
+                const matchAt = step.mapsUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+                if (matchAt) {
+                    return [parseFloat(matchAt[1]), parseFloat(matchAt[2])];
+                }
+                const matchQ = step.mapsUrl.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                if (matchQ) {
+                    return [parseFloat(matchQ[1]), parseFloat(matchQ[2])];
+                }
+            }
+
+            const baseLat = -23.55052;
+            const baseLng = -46.633309;
+            const stepOffset = 0.012;
+            
+            const angle = (index / Math.max(total, 1)) * Math.PI * 1.5;
+            const lat = baseLat + Math.sin(angle) * stepOffset * (index + 1);
+            const lng = baseLng + Math.cos(angle) * stepOffset * (index + 1);
+
+            return [lat, lng];
+        }
+
+        function initRealLeafletMap() {
+            const container = document.getElementById('leafletMapContainer');
+            if (!container || typeof L === 'undefined') return;
+
+            if (leafletMapInstance) {
+                leafletMapInstance.remove();
+                leafletMapInstance = null;
+            }
+
+            leafletMapInstance = L.map('leafletMapContainer', {
+                zoomControl: true,
+                dragging: true,
+                tap: true,
+                touchZoom: true,
+                scrollWheelZoom: true
+            }).setView([-23.55052, -46.633309], 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(leafletMapInstance);
+
+            if (!window.steps || window.steps.length === 0) {
                 return;
             }
-            const input = document.getElementById(`commentInput-${stepId}`);
-            if (!input || !input.value.trim()) return;
-            const step = window.steps.find(s => s.id === stepId);
-            if (step) {
-                if (!step.comments) step.comments = [];
-                step.comments.push({ 
-                    id: Date.now().toString(), 
-                    authorName: userProfile.name, 
-                    authorAvatar: userProfile.avatar || '',
-                    authorUid: window.currentUser ? window.currentUser.uid : '',
-                    text: input.value.trim() 
+
+            const pointsCoords = [];
+            const bounds = [];
+
+            window.steps.forEach((step, idx) => {
+                const coords = extractCoordsFromStep(step, idx, window.steps.length);
+                pointsCoords.push(coords);
+                bounds.push(coords);
+
+                const customIcon = L.divIcon({
+                    className: 'custom-leaflet-marker',
+                    html: `
+                        <div class="relative flex items-center justify-center">
+                            <div class="w-8 h-8 rounded-full ${step.completed ? 'bg-emerald-600' : 'bg-amber-600'} text-white font-extrabold text-xs flex items-center justify-center border-2 border-white shadow-lg transform active:scale-95">
+                                ${idx + 1}
+                            </div>
+                        </div>
+                    `,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
                 });
-                input.value = '';
-                saveSteps();
-                render();
+
+                const marker = L.marker(coords, { icon: customIcon }).addTo(leafletMapInstance);
+
+                const popupContent = `
+                    <div class="p-1 font-sans text-stone-800">
+                        <strong class="text-xs text-stone-900 font-bold block mb-1">${escapeHtml(step.title)}</strong>
+                        <p class="text-[10px] text-stone-500 mb-1.5">${step.time ? '⏰ ' + step.time : (step.date ? '📅 ' + formatDate(step.date) : 'Passo ' + (idx + 1))}</p>
+                        ${step.mapsUrl ? `<a href="${escapeHtml(step.mapsUrl)}" target="_blank" class="text-[10px] bg-emerald-600 text-white font-bold px-2 py-1 rounded inline-block">Abrir no GPS</a>` : ''}
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+
+                marker.on('click', () => {
+                    selectMapStep(step, idx + 1);
+                });
+            });
+
+            if (pointsCoords.length > 1) {
+                L.polyline(pointsCoords, {
+                    color: '#d97706',
+                    weight: 4,
+                    opacity: 0.85,
+                    dashArray: '8, 8'
+                }).addTo(leafletMapInstance);
             }
+
+            if (bounds.length > 0) {
+                leafletMapInstance.fitBounds(bounds, { padding: [40, 40] });
+            }
+
+            setTimeout(() => {
+                if (leafletMapInstance) leafletMapInstance.invalidateSize();
+            }, 200);
+        }
+
+        function selectMapStep(step, stepNumber) {
+            const details = document.getElementById('mapStepDetails');
+            document.getElementById('mapStepTitle').innerText = step.title;
+            document.getElementById('mapStepBadge').innerText = `Passo ${stepNumber}`;
+            document.getElementById('mapStepTime').innerText = step.time ? `⏰ ${step.time}` : (step.date ? `📅 ${formatDate(step.date)}` : 'Sem horário definido');
+            
+            const link = document.getElementById('mapStepLink');
+            if (step.mapsUrl) {
+                link.href = step.mapsUrl;
+                link.classList.remove('hidden');
+            } else {
+                link.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(step.title)}`;
+                link.classList.remove('hidden');
+            }
+            details.classList.remove('hidden');
         }
 
         function generateCollage() {
@@ -1102,11 +1297,9 @@
             document.getElementById('stepColor').value = color;
             const textarea = document.getElementById('stepNote');
 
-            // Atualiza classe do textarea do Post-it
             const theme = colorClasses[color] || colorClasses.yellow;
             textarea.className = `w-full px-3 py-2 rounded-xl border font-handwriting text-base transition-colors focus:outline-none ${theme.textarea}`;
 
-            // Atualiza borda de seleção nos botões de cor
             const buttons = document.querySelectorAll('#colorPicker button');
             buttons.forEach(btn => {
                 if (btn.dataset.color === color) {
