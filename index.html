@@ -56,9 +56,12 @@
                         window.setupRealtimeSync();
                     } else {
                         try {
-                            await signInAnonymously(auth);
+                            const userCred = await signInAnonymously(auth);
+                            window.currentUser = userCred.user;
+                            window.setupRealtimeSync();
                         } catch(e) {
-                            console.error("Erro na autenticação anônima:", e);
+                            console.error("Erro na autenticação anônima do Firebase:", e);
+                            alert("Atenção: Verifique se a 'Autenticação Anônima' está ativada no seu Console do Firebase (Authentication > Sign-in method).");
                         }
                     }
                 });
@@ -85,11 +88,14 @@
                     window.saveStepsLocally();
                     window.render();
                 } else if (window.steps && window.steps.length > 0) {
-                    // Envia os passos padrão iniciais se a coleção remota estiver vazia
+                    // Se estiver vazio na nuvem, faz o upload dos dados locais iniciais
                     window.steps.forEach(step => window.saveStepToCloud(step));
                 }
             }, (error) => {
-                console.warn("Erro no Firestore:", error);
+                console.error("Erro de permissão ou leitura no Firestore:", error);
+                if (error.code === 'permission-denied') {
+                    alert("O Firebase recusou a gravação! Verifique as Regras de Segurança no Firestore (veja o passo a passo de correção).");
+                }
             });
         };
 
@@ -105,6 +111,7 @@
                 await setDoc(stepRef, stepData, { merge: true });
             } catch (e) {
                 console.error("Erro ao salvar no Firebase:", e);
+                alert("Não foi possível salvar na nuvem: " + e.message);
             }
         };
 
