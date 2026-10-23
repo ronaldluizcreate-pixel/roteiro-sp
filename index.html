@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-stone-100 text-stone-800">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Roteiro & Caça a Fotos de Viagem</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Playfair+Display:ital,wght@0,600;0,800;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- html2canvas para exportar a colagem -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- Firebase App & Firestore via CDN (Módulo ES) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configurações do Firebase com fallback inteligente
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'roteiro-viagem-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : { apiKey: "demo-key", authDomain: "demo.firebaseapp.com", projectId: "demo-project" };
+
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+
+        // Disponibiliza no escopo global para interação com os scripts legados
+        window.initFirebaseSync = async function() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUser = user;
+                        window.setupRealtimeSync();
+                    }
+                });
+            } catch (err) {
+                console.warn("Firebase operando em modo offline / fallback de demonstração:", err);
+            }
+        };
+
+        // Sincronização de Perfis e Passos no Firestore
+        window.setupRealtimeSync = function() {
+            if (!db || !currentUser) return;
+
+            const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'steps');
+
+            onSnapshot(collectionRef, (snapshot) => {
+                const remoteSteps = [];
+                snapshot.forEach(docSnap => {
+                    remoteSteps.push({ id: docSnap.id, ...docSnap.data() });
+                });
+
+                if (remoteSteps.length > 0) {
+                    window.steps = remoteSteps;
+                    window.saveStepsLocally();
+                    window.render();
+                }
+            }, (error) => {
+                console.warn("Erro ao ler dados em tempo real do Firestore:", error);
+            });
+        };
+
+        window.saveStepToCloud = async function(step) {
+            if (!db || !currentUser) return;
+            try {
+                const stepRef = doc(db, 'artifacts', appId, 'public', 'data', 'steps', step.id);
+                await setDoc(stepRef, step, { merge: true });
+            } catch (e) {
+                console.error("Erro ao salvar passo no Firebase:", e);
+            }
+        };
+
+        window.deleteStepFromCloud = async function(stepId) {
+            if (!db || !currentUser) return;
+            try {
+                const stepRef = doc(db, 'artifacts', appId, 'public', 'data', 'steps', stepId);
+                await deleteDoc(stepRef, stepRef);
+            } catch (e) {
+                console.error("Erro ao deletar do Firebase:", e);
+            }
+        };
+
+        // Inicia Firebase após carregamento
+        window.initFirebaseSync();
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        handwriting: ['"Caveat"', 'cursive'],
+                        serif: ['"Playfair Display"', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        .postit-shadow {
+            box-shadow: 3px 5px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        @keyframes walkFootprints {
+            0% { opacity: 0.2; transform: translateY(0); }
+            50% { opacity: 1; color: #d97706; }
+            100% { opacity: 0.2; transform: translateY(6px); }
+        }
+
+        .footprint-step {
+            animation: walkFootprints 2.2s infinite ease-in-out;
+        }
+        .footprint-step:nth-child(2) { animation-delay: 0.4s; }
+
+        .photo-card {
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+            will-change: transform, opacity;
+        }
+
+        .photo-card.cycling {
+            transform: translateY(-80px) rotate(15deg) scale(0.9) !important;
+            opacity: 0;
+            z-index: 50 !important;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .wavy-bg {
+            background-color: #fbf9f5;
+            background-image: radial-gradient(#e5e0d8 0.75px, transparent 0.75px), radial-gradient(#e5e0d8 0.75px, #fbf9f5 0.75px);
+            background-size: 30px 30px;
+            background-position: 0 0, 15px 15px;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans bg-stone-100 text-stone-800 antialiased">
+
+    <!-- Topo / Cabeçalho Fixo -->
+    <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-200 px-4 py-3 shadow-xs">
+        <div class="max-w-md mx-auto">
+            
+            <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20 shrink-0">
+                        <i class="fa-solid fa-camera-retro text-base"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5 group cursor-pointer" onclick="editTripTitle()">
+                            <h1 id="tripTitleDisplay" class="font-black text-base sm:text-lg text-stone-900 truncate tracking-tight">EuroTrip 2027</h1>
+                            <i class="fa-solid fa-pen text-xs text-amber-600 opacity-80 group-hover:opacity-100"></i>
+                        </div>
+                        <p class="text-[11px] text-stone-500 font-semibold flex items-center gap-1">
+                            <i class="fa-solid fa-map-pin text-[9px] text-amber-500"></i> Roteiro Colaborativo
+                        </p>
+                    </div>
+                </div>
+
+                <button onclick="openModal()" class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition shrink-0">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Passo</span>
+                </button>
+            </div>
+
+            <div class="flex items-center justify-between gap-2 pt-2 border-t border-stone-100">
+                <!-- Perfil do Usuário Logado -->
+                <button onclick="openProfileModal()" class="flex items-center gap-2 hover:bg-stone-100 p-1 rounded-xl transition">
+                    <div id="headerUserAvatar" class="w-7 h-7 rounded-full bg-amber-500 border border-stone-200 text-[11px] font-bold text-white flex items-center justify-center overflow-hidden shrink-0">
+                        <span id="headerUserInitials">?</span>
+                    </div>
+                    <div class="text-left leading-tight">
+                        <p class="text-[9px] uppercase tracking-wider font-extrabold text-stone-400">Viajante</p>
+                        <p id="headerUserName" class="text-xs font-bold text-stone-800 truncate max-w-[100px]">Carregando...</p>
+                    </div>
+                    <i class="fa-solid fa-chevron-down text-[10px] text-stone-400 ml-0.5"></i>
+                </button>
+
+                <div class="flex items-center gap-1.5">
+                    <button onclick="openGithubInstructions()" class="flex items-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-[11px] px-2.5 py-1.5 rounded-xl border border-stone-200 transition" title="Como subir no GitHub Pages">
+                        <i class="fa-brands fa-github text-xs"></i>
+                        <span class="hidden sm:inline">GitHub</span>
+                    </button>
+                    <button onclick="generateCollage()" class="flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 active:scale-95 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition">
+                        <i class="fa-solid fa-images text-amber-400"></i>
+                        <span>Gerar Story</span>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </header>
+
+    <!-- Modal de Apresentação / Boas-Vindas (Primeiro Acesso) -->
+    <div id="welcomeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md opacity-0 pointer-events-none transition-opacity duration-300 p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-stone-800 space-y-4 text-center">
+            <div class="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto text-2xl shadow-inner">
+                <i class="fa-solid fa-passport"></i>
+            </div>
+            <div>
+                <h3 class="font-extrabold text-lg text-stone-900">Bem-vindo à Viagem!</h3>
+                <p class="text-xs text-stone-500 mt-1">Como você quer ser identificado no grupo para enviar fotos e comentários?</p>
+            </div>
+            <form onsubmit="saveInitialProfile(event)" class="space-y-3 pt-2">
+                <input type="text" id="welcomeNameInput" required placeholder="Digite seu nome (Ex: Sofi, Gui, Leo)..." 
+                    class="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-sm font-semibold text-center">
+                <button type="submit" class="w-full py-3 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold rounded-xl text-xs shadow-md transition">
+                    Entrar na Viagem <i class="fa-solid fa-arrow-right ml-1"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Editar Perfil (Foto e Nome) -->
+    <div id="profileModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs opacity-0 pointer-events-none transition-opacity duration-300 p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-xs rounded-3xl p-5 shadow-2xl text-stone-800 space-y-4">
+            <div class="flex justify-between items-center border-b border-stone-100 pb-2">
+                <h3 class="font-bold text-sm text-stone-900 flex items-center gap-2">
+                    <i class="fa-solid fa-user-gear text-amber-600"></i> Meu Perfil de Viajante
+                </h3>
+                <button onclick="closeProfileModal()" class="w-7 h-7 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="flex flex-col items-center gap-3">
+                <div class="relative group cursor-pointer" onclick="document.getElementById('profileAvatarInput').click()">
+                    <div id="modalProfileAvatar" class="w-20 h-20 rounded-full bg-amber-500 border-2 border-amber-300 text-white font-black text-2xl flex items-center justify-center overflow-hidden shadow-md">
+                        <span id="modalProfileInitials">?</span>
+                    </div>
+                    <div class="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-white text-xs font-bold">
+                        <i class="fa-solid fa-camera mr-1"></i> Trocar
+                    </div>
+                </div>
+                <input type="file" id="profileAvatarInput" accept="image/*" class="hidden" onchange="handleAvatarUpload(event)">
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-stone-500 uppercase mb-1">Seu Nome / Apelido</label>
+                <input type="text" id="editProfileNameInput" required
+                    class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-xs font-bold">
+            </div>
+
+            <div class="pt-1 flex gap-2">
+                <button type="button" onclick="closeProfileModal()" class="flex-1 py-2 border border-stone-200 text-stone-600 font-bold rounded-xl text-xs">
+                    Cancelar
+                </button>
+                <button type="button" onclick="saveProfileChanges()" class="flex-1 py-2 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl text-xs">
+                    Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Instruções do GitHub Pages -->
+    <div id="githubModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs opacity-0 pointer-events-none transition-opacity duration-300 p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-md rounded-3xl p-5 shadow-2xl text-stone-800 space-y-4">
+            <div class="flex justify-between items-center border-b border-stone-100 pb-2">
+                <h3 class="font-bold text-base text-stone-900 flex items-center gap-2">
+                    <i class="fa-brands fa-github text-amber-600"></i> Publicar no GitHub Pages
+                </h3>
+                <button onclick="closeGithubInstructions()" class="w-7 h-7 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="text-xs text-stone-600 space-y-2.5">
+                <p>Siga estes passos para disponibilizar este arquivo HTML para os outros 3 integrantes acessarem via link:</p>
+                <ol class="list-decimal pl-4 space-y-1.5 font-medium">
+                    <li>Crie um repositório no <strong>GitHub</strong> (ex: <code class="bg-stone-100 px-1 rounded">viagem-2027</code>).</li>
+                    <li>Faça o upload deste arquivo renomeado exatamente para <code class="bg-stone-100 px-1 rounded">index.html</code>.</li>
+                    <li>No GitHub, vá em <strong>Settings &gt; Pages</strong>.</li>
+                    <li>Em <em>Source</em>, selecione a branch <code class="bg-stone-100 px-1 rounded">main</code> e clique em <strong>Save</strong>.</li>
+                    <li>Envie o link gerado (ex: <code class="bg-stone-100 px-1 text-amber-700 rounded">https://seu-usuario.github.io/viagem-2027/</code>) no grupo da viagem!</li>
+                </ol>
+            </div>
+            <button onclick="closeGithubInstructions()" class="w-full py-2.5 bg-stone-900 text-white font-bold rounded-xl text-xs">Entendido!</button>
+        </div>
+    </div>
+
+    <!-- Conteúdo Principal -->
+    <main class="flex-1 max-w-md w-full mx-auto px-4 pt-4 pb-28 relative">
+        
+        <div class="mb-6 bg-white rounded-2xl p-4 border border-stone-200/80 shadow-xs relative overflow-hidden">
+            <div class="relative z-10">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs font-bold uppercase tracking-wider text-amber-700 flex items-center gap-1">
+                        <i class="fa-solid fa-bullseye"></i> Desafio de Fotos do Grupo
+                    </span>
+                    <span id="progressPercent" class="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">0%</span>
+                </div>
+                <h2 id="progressText" class="text-base font-extrabold text-stone-900">0 de 0 Fotos Caçadas</h2>
+                <div class="w-full bg-stone-100 h-2 rounded-full mt-2 overflow-hidden border border-stone-200">
+                    <div id="progressBar" class="bg-amber-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="emptyState" class="hidden text-center py-12 px-4">
+            <div class="w-16 h-16 bg-stone-200 text-stone-500 rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl">
+                <i class="fa-solid fa-map-location-dot"></i>
+            </div>
+            <h3 class="text-base font-bold text-stone-800">Seu roteiro ainda está vazio!</h3>
+            <p class="text-xs text-stone-500 mt-1 max-w-xs mx-auto">Adicione os destinos e as listas de fotos para os 4 viajantes.</p>
+            <button onclick="openModal()" class="mt-4 inline-flex items-center gap-2 bg-amber-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs hover:bg-amber-700 transition">
+                <i class="fa-solid fa-plus"></i> Criar Primeiro Passo
+            </button>
+        </div>
+
+        <div id="stepsList" class="relative"></div>
+
+    </main>
+
+    <!-- Botão Flutuante (+ Passo) -->
+    <div class="fixed bottom-6 right-6 z-30">
+        <button onclick="openModal()" class="w-13 h-13 bg-amber-600 hover:bg-amber-700 active:scale-90 text-white font-bold rounded-full shadow-lg flex items-center justify-center transition text-xl border-2 border-white">
+            <i class="fa-solid fa-plus"></i>
+        </button>
+    </div>
+
+    <!-- Modal de Criar / Editar Passo -->
+    <div id="stepModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-xs opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-white border border-stone-200 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-xl transform translate-y-full sm:translate-y-0 sm:scale-95 transition-transform duration-300 max-h-[90vh] overflow-y-auto no-scrollbar text-stone-800">
+            
+            <div class="flex justify-between items-center mb-4 pb-2 border-b border-stone-100">
+                <h3 id="modalTitle" class="text-base font-bold text-stone-900 flex items-center gap-2">
+                    <i class="fa-solid fa-location-dot text-amber-600"></i> <span id="modalTitleText">Cadastrar Novo Passo</span>
+                </h3>
+                <button onclick="closeModal()" class="w-7 h-7 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="stepForm" onsubmit="handleSaveStep(event)" class="space-y-3.5">
+                <input type="hidden" id="stepId">
+
+                <div>
+                    <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Nome do Local ou Parada *</label>
+                    <input type="text" id="stepTitle" required placeholder="Ex: Torre Eiffel, Coliseu, Praia de Pipa..." 
+                        class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-sm">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Data Prevista</label>
+                        <input type="date" id="stepDate" 
+                            class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Horário</label>
+                        <input type="time" id="stepTime" 
+                            class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-xs">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Link do Google Maps</label>
+                    <div class="relative">
+                        <input type="url" id="stepMapsUrl" placeholder="https://maps.app.goo.gl/..." 
+                            class="w-full pl-8 pr-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-xs">
+                        <i class="fa-solid fa-map-pin absolute left-3 top-2.5 text-amber-600 text-xs"></i>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Caça a Fotos (1 por linha)</label>
+                    <textarea id="stepChecklist" rows="2" placeholder="Foto em frente ao monumento&#10;Foto com comida típica" 
+                        class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-xs"></textarea>
+                </div>
+
+                <!-- Seleção de Fotos do Dispositivo (Sem URLs) -->
+                <div>
+                    <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Fotos do Passo (Do Dispositivo)</label>
+                    <input type="file" id="stepPhotoFiles" accept="image/*" multiple onchange="previewStepPhotos(event)"
+                        class="w-full text-xs text-stone-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer">
+                    <div id="stepPhotosPreview" class="grid grid-cols-4 gap-2 mt-2"></div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-xs font-bold text-stone-600 uppercase">Post-it (Anotações)</label>
+                        <div class="flex gap-2" id="colorPicker">
+                            <button type="button" data-color="yellow" onclick="selectPostitColor('yellow')" class="w-5 h-5 rounded-full bg-amber-200 border border-amber-300 focus:outline-none scale-110"></button>
+                            <button type="button" data-color="green" onclick="selectPostitColor('green')" class="w-5 h-5 rounded-full bg-emerald-200 border border-emerald-300 focus:outline-none"></button>
+                            <button type="button" data-color="pink" onclick="selectPostitColor('pink')" class="w-5 h-5 rounded-full bg-rose-200 border border-rose-300 focus:outline-none"></button>
+                            <button type="button" data-color="blue" onclick="selectPostitColor('blue')" class="w-5 h-5 rounded-full bg-sky-200 border border-sky-300 focus:outline-none"></button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="stepColor" value="yellow">
+                    <textarea id="stepNote" rows="2" placeholder="Dicas de ingressos, restaurante..." 
+                        class="w-full px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-stone-800 focus:outline-none text-sm font-handwriting text-lg"></textarea>
+                </div>
+
+                <div class="pt-2 flex gap-3">
+                    <button type="button" onclick="closeModal()" class="flex-1 py-2.5 border border-stone-200 text-stone-600 font-bold rounded-xl text-xs hover:bg-stone-50 transition">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="flex-1 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl text-xs transition">
+                        Salvar Passo
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal da Colagem Story -->
+    <div id="collageModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md opacity-0 pointer-events-none transition-opacity duration-300 p-2 sm:p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-sm rounded-3xl p-4 shadow-2xl flex flex-col max-h-[95vh] text-stone-800">
+            
+            <div class="flex justify-between items-center mb-2 pb-2 border-b border-stone-100">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-camera-retro text-amber-600 text-base"></i>
+                    <h3 class="text-sm font-bold text-stone-900">Prévia do Story da Viagem</h3>
+                </div>
+                <button onclick="closeCollageModal()" class="w-7 h-7 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto no-scrollbar my-1 rounded-2xl border border-stone-200 flex justify-center">
+                <div id="collageCanvas" class="w-[310px] h-[550px] wavy-bg p-4 flex flex-col justify-between relative overflow-hidden shrink-0">
+                    <div class="text-center pt-2 relative z-10">
+                        <span class="text-[9px] font-extrabold uppercase tracking-widest text-amber-800">MEMÓRIAS DA VIAGEM</span>
+                        <h2 id="storyTripTitle" class="font-serif text-2xl font-bold text-stone-900 italic mt-0.5">EuroTrip 2027</h2>
+                        <div class="w-8 h-0.5 bg-amber-600 mx-auto mt-1 rounded-full"></div>
+                    </div>
+
+                    <div id="storyMosaicGrid" class="relative my-auto h-[360px] w-full flex items-center justify-center"></div>
+
+                    <div class="text-center pb-1 relative z-10 flex items-center justify-between border-t border-stone-300/60 pt-2">
+                        <span class="font-serif italic text-[11px] text-stone-500">Gui • Ana • Leo • Sofi</span>
+                        <span class="text-[9px] uppercase font-bold tracking-wider text-amber-800">Roteiro Interativo</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-3 flex gap-2">
+                <button onclick="downloadCollage()" class="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs shadow-xs flex items-center justify-center gap-1.5 transition">
+                    <i class="fa-solid fa-download"></i> Baixar Story (PNG)
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Script JavaScript -->
+    <script>
+        const defaultSteps = [
+            {
+                id: '1',
+                title: 'Praia de Pipa & Falésias',
+                date: '2026-11-10',
+                time: '09:00',
+                mapsUrl: 'https://maps.google.com/?q=Praia+de+Pipa',
+                completed: false,
+                color: 'yellow',
+                photos: [
+                    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+                    'https://images.unsplash.com/photo-1519046904884-53103b34b206?auto=format&fit=crop&w=800&q=80'
+                ],
+                checklist: [
+                    { id: 'c1', text: 'Foto com o chapéu de palha', checked: true },
+                    { id: 'c2', text: 'Selfie com os golfinhos', checked: false }
+                ],
+                note: '🌴 Buggy agendado pras 10h! Levar protetor solar.',
+                groupPhotos: [
+                    { id: 'gp1', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80', authorName: 'Ana', authorAvatar: '' }
+                ],
+                comments: [
+                    { id: 'cm1', authorName: 'Leo', authorAvatar: '', text: 'Lugar maravilhoso demais!' }
+                ]
+            }
+        ];
+
+        let tripTitle = localStorage.getItem('scavenger_trip_title') || 'EuroTrip 2027';
+        window.steps = [];
+        let currentEditingPhotos = [];
+
+        // Estado do Perfil Atual
+        let userProfile = {
+            name: '',
+            avatar: ''
+        };
+
+        const colorClasses = {
+            yellow: { bg: 'bg-amber-100/90', border: 'border-amber-200', text: 'text-amber-950', pin: 'bg-amber-500' },
+            green: { bg: 'bg-emerald-100/90', border: 'border-emerald-200', text: 'text-emerald-950', pin: 'bg-emerald-500' },
+            pink: { bg: 'bg-rose-100/90', border: 'border-rose-200', text: 'text-rose-950', pin: 'bg-rose-500' },
+            blue: { bg: 'bg-sky-100/90', border: 'border-sky-200', text: 'text-sky-950', pin: 'bg-sky-500' }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('tripTitleDisplay').innerText = tripTitle;
+            loadUserProfile();
+            loadSteps();
+            render();
+        });
+
+        // Gerenciamento de Perfil do Usuário
+        function loadUserProfile() {
+            const savedProfile = localStorage.getItem('scavenger_user_profile');
+            if (savedProfile) {
+                try {
+                    userProfile = JSON.parse(savedProfile);
+                    updateUserHeaderUI();
+                } catch(e) {
+                    showWelcomeModal();
+                }
+            } else {
+                showWelcomeModal();
+            }
+        }
+
+        function saveUserProfile() {
+            localStorage.setItem('scavenger_user_profile', JSON.stringify(userProfile));
+            updateUserHeaderUI();
+        }
+
+        function updateUserHeaderUI() {
+            const initials = userProfile.name ? userProfile.name.substring(0, 2).toUpperCase() : '?';
+            document.getElementById('headerUserName').innerText = userProfile.name || 'Sem nome';
+            
+            const headerAvatar = document.getElementById('headerUserAvatar');
+            if (userProfile.avatar) {
+                headerAvatar.innerHTML = `<img src="${userProfile.avatar}" class="w-full h-full object-cover">`;
+            } else {
+                headerAvatar.innerHTML = `<span id="headerUserInitials">${initials}</span>`;
+            }
+
+            // Atualiza modal de perfil também
+            const modalAvatar = document.getElementById('modalProfileAvatar');
+            if (userProfile.avatar) {
+                modalAvatar.innerHTML = `<img src="${userProfile.avatar}" class="w-full h-full object-cover">`;
+            } else {
+                modalAvatar.innerHTML = `<span>${initials}</span>`;
+            }
+            document.getElementById('editProfileNameInput').value = userProfile.name || '';
+        }
+
+        function showWelcomeModal() {
+            document.getElementById('welcomeModal').classList.remove('pointer-events-none', 'opacity-0');
+        }
+
+        function saveInitialProfile(e) {
+            e.preventDefault();
+            const inputName = document.getElementById('welcomeNameInput').value.trim();
+            if (!inputName) return;
+            userProfile.name = inputName;
+            saveUserProfile();
+            document.getElementById('welcomeModal').classList.add('pointer-events-none', 'opacity-0');
+        }
+
+        function openProfileModal() {
+            updateUserHeaderUI();
+            document.getElementById('profileModal').classList.remove('pointer-events-none', 'opacity-0');
+        }
+
+        function closeProfileModal() {
+            document.getElementById('profileModal').classList.add('pointer-events-none', 'opacity-0');
+        }
+
+        function handleAvatarUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                userProfile.avatar = e.target.result;
+                updateUserHeaderUI();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function saveProfileChanges() {
+            const newName = document.getElementById('editProfileNameInput').value.trim();
+            if (newName) userProfile.name = newName;
+            saveUserProfile();
+            closeProfileModal();
+            render();
+        }
+
+        function loadSteps() {
+            const saved = localStorage.getItem('scavenger_trip_steps');
+            if (saved) {
+                try { window.steps = JSON.parse(saved); } catch (e) { window.steps = [...defaultSteps]; }
+            } else {
+                window.steps = [...defaultSteps];
+                saveStepsLocally();
+            }
+        }
+
+        window.saveStepsLocally = function() {
+            localStorage.setItem('scavenger_trip_steps', JSON.stringify(window.steps));
+        };
+
+        function saveSteps() {
+            saveStepsLocally();
+            window.steps.forEach(s => {
+                if (window.saveStepToCloud) window.saveStepToCloud(s);
+            });
+        }
+
+        function editTripTitle() {
+            const newTitle = prompt('Nome do Roteiro / Viagem:', tripTitle);
+            if (newTitle && newTitle.trim()) {
+                tripTitle = newTitle.trim();
+                localStorage.setItem('scavenger_trip_title', tripTitle);
+                document.getElementById('tripTitleDisplay').innerText = tripTitle;
+            }
+        }
+
+        function render() {
+            const container = document.getElementById('stepsList');
+            const emptyState = document.getElementById('emptyState');
+            container.innerHTML = '';
+
+            if (window.steps.length === 0) {
+                emptyState.classList.remove('hidden');
+            } else {
+                emptyState.classList.add('hidden');
+                window.steps.forEach((step, index) => {
+                    const card = createStepCard(step, index, window.steps.length);
+                    container.appendChild(card);
+                });
+            }
+            updateStats();
+        }
+
+        function openGithubInstructions() {
+            document.getElementById('githubModal').classList.remove('pointer-events-none', 'opacity-0');
+        }
+
+        function closeGithubInstructions() {
+            document.getElementById('githubModal').classList.add('pointer-events-none', 'opacity-0');
+        }
+
+        function createStepCard(step, index, total) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'relative mb-8 last:mb-0';
+
+            const isLast = index === total - 1;
+            const isCompleted = step.completed;
+            const theme = colorClasses[step.color] || colorClasses.yellow;
+
+            wrapper.innerHTML = `
+                ${!isLast ? `
+                    <div class="absolute left-5 top-14 bottom-0 w-6 flex flex-col items-center justify-around z-0 pointer-events-none opacity-40">
+                        <div class="footprint-step text-amber-600 text-[10px]"><i class="fa-solid fa-shoe-prints rotate-90"></i></div>
+                        <div class="footprint-step text-amber-600 text-[10px]"><i class="fa-solid fa-shoe-prints rotate-90 -scale-y-100"></i></div>
+                    </div>
+                ` : ''}
+
+                <div class="relative z-10 flex gap-3 items-start">
+                    <button onclick="toggleStepComplete('${step.id}')" 
+                        class="mt-1 shrink-0 w-10 h-10 rounded-xl ${isCompleted ? 'bg-emerald-500 text-white' : 'bg-white text-stone-700 border border-stone-200'} shadow-xs flex items-center justify-center transition active:scale-95">
+                        ${isCompleted ? '<i class="fa-solid fa-check"></i>' : `<span class="font-extrabold text-xs">${index + 1}</span>`}
+                    </button>
+
+                    <div class="flex-1 bg-white rounded-2xl p-4 border border-stone-200/80 shadow-xs">
+                        <div class="flex items-start justify-between gap-2 mb-2">
+                            <div>
+                                <h3 class="font-bold text-stone-900 text-sm ${isCompleted ? 'line-through text-stone-400' : ''}">
+                                    ${escapeHtml(step.title)}
+                                </h3>
+                                <div class="flex items-center gap-2 mt-0.5 text-[11px] text-stone-400 font-medium">
+                                    ${step.date ? `<span><i class="fa-regular fa-calendar text-amber-600 mr-1"></i>${formatDate(step.date)}</span>` : ''}
+                                    ${step.time ? `<span><i class="fa-regular fa-clock text-amber-600 mr-1"></i>${step.time}</span>` : ''}
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-1">
+                                ${step.mapsUrl ? `
+                                    <a href="${escapeHtml(step.mapsUrl)}" target="_blank" 
+                                        class="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-[11px] flex items-center gap-1 hover:bg-emerald-100 transition">
+                                        <i class="fa-solid fa-diamond-turn-right text-[10px]"></i> Rota
+                                    </a>
+                                ` : ''}
+                                <button onclick="openModal('${step.id}')" class="w-6 h-6 rounded-md text-stone-400 hover:text-stone-700 text-xs"><i class="fa-solid fa-pen"></i></button>
+                                <button onclick="deleteStep('${step.id}')" class="w-6 h-6 rounded-md text-stone-400 hover:text-rose-500 text-xs"><i class="fa-regular fa-trash-can"></i></button>
+                            </div>
+                        </div>
+
+                        ${renderPhotoStack(step.photos || [], step.id)}
+
+                        <!-- Checklist de Fotos -->
+                        <div class="my-3 bg-stone-50 rounded-xl p-2.5 border border-stone-100">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <span class="text-[10px] font-bold uppercase text-amber-800">📸 O que Fotografar:</span>
+                                <span class="text-[10px] text-stone-400 font-bold">${(step.checklist || []).filter(c => c.checked).length}/${(step.checklist || []).length}</span>
+                            </div>
+                            <div class="space-y-1">
+                                ${(step.checklist || []).map((item) => `
+                                    <label class="flex items-center gap-2 text-xs text-stone-700 cursor-pointer">
+                                        <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleChecklistItem('${step.id}', '${item.id}')" class="rounded text-amber-600 border-stone-300">
+                                        <span class="${item.checked ? 'line-through text-stone-400' : ''}">${escapeHtml(item.text)}</span>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Post-it -->
+                        ${step.note ? `
+                            <div class="${theme.bg} ${theme.border} ${theme.text} border rounded-xl p-3 postit-shadow my-3">
+                                <p class="font-handwriting text-base leading-tight">${escapeHtml(step.note)}</p>
+                            </div>
+                        ` : ''}
+
+                        <!-- Galeria de Fotos Subidas pelos Viajantes -->
+                        <div class="mt-3 pt-2 border-t border-stone-100">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[11px] font-bold text-stone-600">Fotos dos Viajantes (${(step.groupPhotos || []).length})</span>
+                                <label class="cursor-pointer bg-stone-100 hover:bg-stone-200 text-stone-700 px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                                    <i class="fa-solid fa-upload"></i> Subir Foto
+                                    <input type="file" accept="image/*" multiple class="hidden" onchange="handleUploadGroupPhoto(event, '${step.id}')">
+                                </label>
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-2">
+                                ${(step.groupPhotos || []).map(gp => `
+                                    <div class="relative group aspect-square rounded-xl overflow-hidden border border-stone-200 bg-stone-100">
+                                        <img src="${escapeHtml(gp.url)}" class="w-full h-full object-cover">
+                                        
+                                        <!-- Badge com foto/nome de quem subiu -->
+                                        <div class="absolute bottom-1 left-1 bg-black/60 text-white px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 backdrop-blur-xs">
+                                            ${gp.authorAvatar ? `<img src="${gp.authorAvatar}" class="w-3 h-3 rounded-full object-cover">` : '<i class="fa-solid fa-user text-[8px]"></i>'}
+                                            <span class="truncate max-w-[50px]">${escapeHtml(gp.authorName || 'Viajante')}</span>
+                                        </div>
+
+                                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                                            <a href="${escapeHtml(gp.url)}" download="foto-viagem.png" class="w-7 h-7 rounded-full bg-white/90 text-stone-800 flex items-center justify-center text-xs hover:bg-white" title="Baixar Foto">
+                                                <i class="fa-solid fa-download"></i>
+                                            </a>
+                                            <button onclick="deleteGroupPhoto('${step.id}', '${gp.id}')" class="w-7 h-7 rounded-full bg-rose-500 text-white flex items-center justify-center text-xs hover:bg-rose-600" title="Apagar Foto">
+                                                <i class="fa-solid fa-trash-can"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Comentários -->
+                        <div class="mt-3 pt-2 border-t border-stone-100">
+                            <div class="space-y-1.5 mb-2">
+                                ${(step.comments || []).map(c => `
+                                    <div class="text-[11px] bg-stone-50 p-1.5 rounded-lg border border-stone-100 flex items-start gap-1.5">
+                                        <div class="w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] flex items-center justify-center font-bold overflow-hidden shrink-0 mt-0.5">
+                                            ${c.authorAvatar ? `<img src="${c.authorAvatar}" class="w-full h-full object-cover">` : c.authorName.substring(0,1).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <span class="font-bold text-amber-800">${escapeHtml(c.authorName)}:</span> 
+                                            <span class="text-stone-700">${escapeHtml(c.text)}</span>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div class="flex gap-1.5">
+                                <input type="text" id="commentInput-${step.id}" placeholder="Escrever comentário..." onkeydown="if(event.key==='Enter') addComment('${step.id}')" class="flex-1 bg-stone-50 border border-stone-200 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-amber-500">
+                                <button onclick="addComment('${step.id}')" class="bg-stone-800 hover:bg-stone-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition"><i class="fa-solid fa-paper-plane"></i></button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            `;
+            return wrapper;
+        }
+
+        function renderPhotoStack(photos, stepId) {
+            if (!photos || photos.length === 0) return '';
+            const rotations = [-3, 3, -4];
+            return `
+                <div class="relative w-full h-40 my-2 select-none">
+                    <div id="stack-${stepId}" class="relative w-full h-full">
+                        ${photos.map((url, idx) => `
+                            <div id="photo-${stepId}-${idx}" onclick="cyclePhoto('${stepId}', ${idx}, ${photos.length})"
+                                style="transform: rotate(${rotations[idx % 3]}deg); z-index: ${photos.length - idx};"
+                                class="photo-card absolute inset-0 w-full h-full bg-white p-1.5 rounded-xl shadow-xs border border-stone-200 cursor-pointer">
+                                <img src="${escapeHtml(url)}" class="w-full h-full object-cover rounded-lg">
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function cyclePhoto(stepId, currentIndex, totalPhotos) {
+            if (totalPhotos <= 1) return;
+            const topCard = document.getElementById(`photo-${stepId}-${currentIndex}`);
+            if (!topCard) return;
+            topCard.classList.add('cycling');
+            setTimeout(() => {
+                const step = window.steps.find(s => s.id === stepId);
+                if (step && step.photos) {
+                    step.photos.push(step.photos.shift());
+                    saveSteps();
+                    render();
+                }
+            }, 250);
+        }
+
+        function previewStepPhotos(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+            
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentEditingPhotos.push(e.target.result);
+                    renderStepPhotosPreview();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function renderStepPhotosPreview() {
+            const container = document.getElementById('stepPhotosPreview');
+            container.innerHTML = currentEditingPhotos.map((imgUrl, idx) => `
+                <div class="relative aspect-square rounded-lg overflow-hidden border border-stone-200">
+                    <img src="${imgUrl}" class="w-full h-full object-cover">
+                    <button type="button" onclick="removeEditingPhoto(${idx})" class="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function removeEditingPhoto(index) {
+            currentEditingPhotos.splice(index, 1);
+            renderStepPhotosPreview();
+        }
+
+        function handleUploadGroupPhoto(event, stepId) {
+            if (!userProfile.name) {
+                showWelcomeModal();
+                return;
+            }
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+            const step = window.steps.find(s => s.id === stepId);
+            if (!step) return;
+            if (!step.groupPhotos) step.groupPhotos = [];
+
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    step.groupPhotos.push({
+                        id: Date.now().toString() + Math.random().toString(36).substr(2, 4),
+                        url: e.target.result,
+                        authorName: userProfile.name,
+                        authorAvatar: userProfile.avatar || ''
+                    });
+                    saveSteps();
+                    render();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function deleteGroupPhoto(stepId, photoId) {
+            const step = window.steps.find(s => s.id === stepId);
+            if (step && step.groupPhotos) {
+                step.groupPhotos = step.groupPhotos.filter(p => p.id !== photoId);
+                saveSteps();
+                render();
+            }
+        }
+
+        function toggleChecklistItem(stepId, itemId) {
+            const step = window.steps.find(s => s.id === stepId);
+            if (step) {
+                const item = (step.checklist || []).find(c => c.id === itemId);
+                if (item) { item.checked = !item.checked; saveSteps(); render(); }
+            }
+        }
+
+        function addComment(stepId) {
+            if (!userProfile.name) {
+                showWelcomeModal();
+                return;
+            }
+            const input = document.getElementById(`commentInput-${stepId}`);
+            if (!input || !input.value.trim()) return;
+            const step = window.steps.find(s => s.id === stepId);
+            if (step) {
+                if (!step.comments) step.comments = [];
+                step.comments.push({ 
+                    id: Date.now().toString(), 
+                    authorName: userProfile.name, 
+                    authorAvatar: userProfile.avatar || '', 
+                    text: input.value.trim() 
+                });
+                input.value = '';
+                saveSteps();
+                render();
+            }
+        }
+
+        function generateCollage() {
+            document.getElementById('storyTripTitle').innerText = tripTitle;
+            const grid = document.getElementById('storyMosaicGrid');
+            grid.innerHTML = '';
+
+            let allPhotos = [];
+            window.steps.forEach(s => {
+                if (s.groupPhotos) s.groupPhotos.forEach(gp => allPhotos.push(gp.url));
+                if (s.photos) s.photos.forEach(p => allPhotos.push(p));
+            });
+
+            if (allPhotos.length === 0) {
+                grid.innerHTML = `<p class="text-xs text-stone-400 text-center">Adicione fotos aos passos para compor a colagem!</p>`;
+            } else {
+                const mosaicHTML = `
+                    <div class="relative w-full h-full flex flex-col items-center justify-center gap-2">
+                        <div class="w-36 h-36 bg-white p-1 rounded-xl shadow-md rotate-45 overflow-hidden border border-stone-200">
+                            <div class="w-full h-full -rotate-45 scale-135">
+                                <img src="${allPhotos[0]}" class="w-full h-full object-cover">
+                            </div>
+                        </div>
+                        ${allPhotos[1] ? `
+                            <div class="absolute top-2 left-2 w-20 h-20 bg-white p-1 rounded-lg shadow-sm rotate-12 overflow-hidden">
+                                <img src="${allPhotos[1]}" class="w-full h-full object-cover">
+                            </div>
+                        ` : ''}
+                        ${allPhotos[2] ? `
+                            <div class="absolute bottom-4 right-2 w-24 h-24 bg-white p-1 rounded-lg shadow-sm -rotate-6 overflow-hidden">
+                                <img src="${allPhotos[2]}" class="w-full h-full object-cover">
+                            </div>
+                        ` : ''}
+                        ${allPhotos[3] ? `
+                            <div class="absolute bottom-2 left-4 w-20 h-20 bg-white p-1 rounded-lg shadow-sm rotate-45 overflow-hidden border border-stone-200">
+                                <div class="w-full h-full -rotate-45 scale-125">
+                                    <img src="${allPhotos[3]}" class="w-full h-full object-cover">
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                grid.innerHTML = mosaicHTML;
+            }
+
+            const modal = document.getElementById('collageModal');
+            modal.classList.remove('pointer-events-none', 'opacity-0');
+        }
+
+        function closeCollageModal() {
+            document.getElementById('collageModal').classList.add('pointer-events-none', 'opacity-0');
+        }
+
+        function downloadCollage() {
+            const canvasEl = document.getElementById('collageCanvas');
+            html2canvas(canvasEl, { scale: 3 }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `story-${tripTitle.toLowerCase().replace(/\s+/g, '-')}.png`;
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+
+        function openModal(editId = null) {
+            const modal = document.getElementById('stepModal');
+            document.getElementById('stepForm').reset();
+            document.getElementById('stepId').value = '';
+            currentEditingPhotos = [];
+
+            if (editId) {
+                document.getElementById('modalTitleText').innerText = "Editar Passo";
+                const step = window.steps.find(s => s.id === editId);
+                if (step) {
+                    document.getElementById('stepId').value = step.id;
+                    document.getElementById('stepTitle').value = step.title;
+                    document.getElementById('stepDate').value = step.date || '';
+                    document.getElementById('stepTime').value = step.time || '';
+                    document.getElementById('stepMapsUrl').value = step.mapsUrl || '';
+                    document.getElementById('stepChecklist').value = (step.checklist || []).map(c => c.text).join('\n');
+                    document.getElementById('stepNote').value = step.note || '';
+                    currentEditingPhotos = [...(step.photos || [])];
+                }
+            } else {
+                document.getElementById('modalTitleText').innerText = "Cadastrar Novo Passo";
+            }
+
+            renderStepPhotosPreview();
+            modal.classList.remove('pointer-events-none', 'opacity-0');
+        }
+
+        function closeModal() {
+            document.getElementById('stepModal').classList.add('pointer-events-none', 'opacity-0');
+        }
+
+        function selectPostitColor(color) {
+            document.getElementById('stepColor').value = color;
+        }
+
+        function handleSaveStep(event) {
+            event.preventDefault();
+            const id = document.getElementById('stepId').value;
+            const title = document.getElementById('stepTitle').value.trim();
+            const date = document.getElementById('stepDate').value;
+            const time = document.getElementById('stepTime').value;
+            const mapsUrl = document.getElementById('stepMapsUrl').value.trim();
+            const checklistRaw = document.getElementById('stepChecklist').value;
+            const note = document.getElementById('stepNote').value.trim();
+            const color = document.getElementById('stepColor').value;
+
+            const checklist = checklistRaw.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((text, idx) => ({ id: 'c_' + idx, text, checked: false }));
+
+            let updatedStep = null;
+
+            if (id) {
+                const idx = window.steps.findIndex(s => s.id === id);
+                if (idx !== -1) {
+                    window.steps[idx] = { ...window.steps[idx], title, date, time, mapsUrl, photos: [...currentEditingPhotos], checklist, note, color };
+                    updatedStep = window.steps[idx];
+                }
+            } else {
+                updatedStep = { id: Date.now().toString(), title, date, time, mapsUrl, completed: false, photos: [...currentEditingPhotos], checklist, note, color, groupPhotos: [], comments: [] };
+                window.steps.push(updatedStep);
+            }
+
+            saveStepsLocally();
+            if (updatedStep && window.saveStepToCloud) window.saveStepToCloud(updatedStep);
+
+            render();
+            closeModal();
+        }
+
+        function toggleStepComplete(id) {
+            const step = window.steps.find(s => s.id === id);
+            if (step) { 
+                step.completed = !step.completed; 
+                saveSteps(); 
+                render(); 
+            }
+        }
+
+        function deleteStep(id) {
+            if (confirm('Remover este passo do roteiro?')) {
+                window.steps = window.steps.filter(s => s.id !== id);
+                saveStepsLocally();
+                if (window.deleteStepFromCloud) window.deleteStepFromCloud(id);
+                render();
+            }
+        }
+
+        function updateStats() {
+            let total = 0, checked = 0;
+            window.steps.forEach(s => (s.checklist || []).forEach(c => { total++; if (c.checked) checked++; }));
+            const pct = total === 0 ? 0 : Math.round((checked / total) * 100);
+            document.getElementById('progressText').innerText = `${checked} de ${total} Fotos Caçadas`;
+            document.getElementById('progressPercent').innerText = `${pct}%`;
+            document.getElementById('progressBar').style.width = `${pct}%`;
+        }
+
+        function formatDate(d) { if (!d) return ''; const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; }
+        function escapeHtml(s) { return s ? s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : ''; }
+    </script>
+</body>
+</html>
