@@ -47,7 +47,6 @@
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                // Autentica o usuário de forma anônima garantindo ID único para cada dispositivo/integrante
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         window.currentUser = user;
@@ -57,11 +56,11 @@
                     }
                 });
             } catch (err) {
-                console.warn("Firebase operando em modo offline / fallback de demonstração:", err);
+                console.warn("Firebase operando em modo offline / fallback local:", err);
             }
         };
 
-        // Sincronização dos Passos e Dados em Tempo Real no Firestore
+        // Sincronização dos Passos e Dados em Tempo Real
         window.setupRealtimeSync = function() {
             if (!db) return;
 
@@ -74,14 +73,13 @@
                 });
 
                 if (remoteSteps.length > 0) {
-                    // Ordena por data/criação
                     remoteSteps.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                     window.steps = remoteSteps;
                     window.saveStepsLocally();
                     window.render();
                 }
             }, (error) => {
-                console.warn("Erro ao ler dados em tempo real do Firestore:", error);
+                console.warn("Erro no Firestore:", error);
             });
         };
 
@@ -96,7 +94,7 @@
                 };
                 await setDoc(stepRef, stepData, { merge: true });
             } catch (e) {
-                console.error("Erro ao salvar passo no Firebase:", e);
+                console.error("Erro ao salvar no Firebase:", e);
             }
         };
 
@@ -106,11 +104,10 @@
                 const stepRef = doc(db, 'roteiro_passos', stepId);
                 await deleteDoc(stepRef);
             } catch (e) {
-                console.error("Erro ao deletar do Firebase:", e);
+                console.error("Erro ao deletar no Firebase:", e);
             }
         };
 
-        // Inicia Firebase
         window.initFirebaseSync();
     </script>
 
@@ -178,12 +175,20 @@
         .btn-plus-animated {
             animation: pulseGlow 3s infinite ease-in-out;
         }
+
+        .modal-active {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+        .modal-active > div {
+            transform: translateY(0) scale(1) !important;
+        }
     </style>
 </head>
 <body class="h-full flex flex-col font-sans bg-stone-100 text-stone-800 antialiased">
 
     <!-- Topo / Cabeçalho Fixo -->
-    <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-200 px-4 py-3 shadow-xs">
+    <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-stone-200 px-4 py-3 shadow-xs">
         <div class="max-w-md mx-auto">
             
             <div class="flex items-center justify-between gap-2 mb-2">
@@ -194,11 +199,12 @@
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-1.5 group cursor-pointer" onclick="editTripTitle()">
                             <h1 id="tripTitleDisplay" class="font-black text-base sm:text-lg text-stone-900 truncate tracking-tight">Roteiro SP</h1>
-                            <i class="fa-solid fa-pen text-xs text-amber-600 opacity-80 group-hover:opacity-100"></i>
+                            <i class="fa-solid fa-pen text-xs text-amber-600 opacity-80 group-hover:opacity-100 shrink-0"></i>
                         </div>
-                        <p class="text-[11px] text-stone-500 font-semibold flex items-center gap-1">
-                            <i class="fa-solid fa-map-pin text-[9px] text-amber-500"></i> Roteiro Colaborativo
-                        </p>
+                        <div class="flex items-center gap-1 group cursor-pointer" onclick="editTripSubtitle()">
+                            <p id="tripSubtitleDisplay" class="text-[11px] text-stone-500 font-semibold truncate">Roteiro Colaborativo</p>
+                            <i class="fa-solid fa-pen text-[9px] text-stone-400 opacity-70 group-hover:opacity-100 shrink-0"></i>
+                        </div>
                     </div>
                 </div>
 
@@ -232,9 +238,9 @@
         </div>
     </header>
 
-    <!-- Modal de Apresentação / Boas-Vindas (Primeiro Acesso) -->
-    <div id="welcomeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md opacity-0 pointer-events-none transition-opacity duration-300 p-4">
-        <div class="bg-white border border-stone-200 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-stone-800 space-y-4 text-center">
+    <!-- Modal de Apresentação / Boas-Vindas -->
+    <div id="welcomeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-stone-800 space-y-4 text-center transform scale-95 transition-transform duration-300">
             <div class="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto text-2xl shadow-inner">
                 <i class="fa-solid fa-passport"></i>
             </div>
@@ -252,9 +258,9 @@
         </div>
     </div>
 
-    <!-- Modal de Editar Perfil (Foto e Nome) -->
-    <div id="profileModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs opacity-0 pointer-events-none transition-opacity duration-300 p-4">
-        <div class="bg-white border border-stone-200 w-full max-w-xs rounded-3xl p-5 shadow-2xl text-stone-800 space-y-4">
+    <!-- Modal de Editar Perfil -->
+    <div id="profileModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs opacity-0 pointer-events-none transition-all duration-300 p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-xs rounded-3xl p-5 shadow-2xl text-stone-800 space-y-4 transform scale-95 transition-transform duration-300">
             <div class="flex justify-between items-center border-b border-stone-100 pb-2">
                 <h3 class="font-bold text-sm text-stone-900 flex items-center gap-2">
                     <i class="fa-solid fa-user-gear text-amber-600"></i> Meu Perfil de Viajante
@@ -326,22 +332,22 @@
 
     </main>
 
-    <!-- Botão Flutuante (+ Passo) Destacado e Estilizado -->
-    <div class="fixed bottom-6 right-6 z-30">
+    <!-- Botão Flutuante (+ Passo) Destacado -->
+    <div class="fixed bottom-6 right-6 z-20">
         <button onclick="openModal()" class="btn-plus-animated w-16 h-16 bg-gradient-to-tr from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 active:scale-90 text-white font-bold rounded-full shadow-2xl flex items-center justify-center transition border-2 border-white/90">
             <i class="fa-solid fa-plus text-2xl"></i>
         </button>
     </div>
 
-    <!-- Modal de Criar / Editar Passo -->
-    <div id="stepModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-xs opacity-0 pointer-events-none transition-opacity duration-300">
-        <div class="bg-white border border-stone-200 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-xl transform translate-y-full sm:translate-y-0 sm:scale-95 transition-transform duration-300 max-h-[90vh] overflow-y-auto no-scrollbar text-stone-800">
+    <!-- Modal de Criar / Editar Passo (Ajustado Mobile) -->
+    <div id="stepModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs opacity-0 pointer-events-none transition-all duration-300">
+        <div class="bg-white border border-stone-200 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl transform translate-y-full sm:translate-y-0 sm:scale-95 transition-transform duration-300 max-h-[85vh] sm:max-h-[90vh] overflow-y-auto no-scrollbar text-stone-800">
             
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-stone-100">
                 <h3 id="modalTitle" class="text-base font-bold text-stone-900 flex items-center gap-2">
                     <i class="fa-solid fa-location-dot text-amber-600"></i> <span id="modalTitleText">Cadastrar Novo Passo</span>
                 </h3>
-                <button onclick="closeModal()" class="w-7 h-7 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
+                <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
@@ -352,7 +358,7 @@
                 <div>
                     <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Nome do Local ou Parada *</label>
                     <input type="text" id="stepTitle" required placeholder="Ex: Parque Ibirapuera, Avenida Paulista..." 
-                        class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-sm">
+                        class="w-full px-3 py-2.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-sm">
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
@@ -385,32 +391,33 @@
 
                 <!-- Seleção de Fotos do Dispositivo -->
                 <div>
-                    <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Fotos do Passo (Do Dispositivo)</label>
+                    <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Fotos do Passo</label>
                     <input type="file" id="stepPhotoFiles" accept="image/*" multiple onchange="previewStepPhotos(event)"
                         class="w-full text-xs text-stone-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer">
                     <div id="stepPhotosPreview" class="grid grid-cols-4 gap-2 mt-2"></div>
                 </div>
 
+                <!-- Post-it com Seletor de Cores Funcionando -->
                 <div>
-                    <div class="flex justify-between items-center mb-1">
+                    <div class="flex justify-between items-center mb-1.5">
                         <label class="block text-xs font-bold text-stone-600 uppercase">Post-it (Anotações)</label>
                         <div class="flex gap-2" id="colorPicker">
-                            <button type="button" data-color="yellow" onclick="selectPostitColor('yellow')" class="w-5 h-5 rounded-full bg-amber-200 border border-amber-300 focus:outline-none scale-110"></button>
-                            <button type="button" data-color="green" onclick="selectPostitColor('green')" class="w-5 h-5 rounded-full bg-emerald-200 border border-emerald-300 focus:outline-none"></button>
-                            <button type="button" data-color="pink" onclick="selectPostitColor('pink')" class="w-5 h-5 rounded-full bg-rose-200 border border-rose-300 focus:outline-none"></button>
-                            <button type="button" data-color="blue" onclick="selectPostitColor('blue')" class="w-5 h-5 rounded-full bg-sky-200 border border-sky-300 focus:outline-none"></button>
+                            <button type="button" data-color="yellow" onclick="selectPostitColor('yellow')" class="w-6 h-6 rounded-full bg-amber-200 border-2 border-amber-400 focus:outline-none transition-transform scale-110"></button>
+                            <button type="button" data-color="green" onclick="selectPostitColor('green')" class="w-6 h-6 rounded-full bg-emerald-200 border-2 border-transparent focus:outline-none transition-transform"></button>
+                            <button type="button" data-color="pink" onclick="selectPostitColor('pink')" class="w-6 h-6 rounded-full bg-rose-200 border-2 border-transparent focus:outline-none transition-transform"></button>
+                            <button type="button" data-color="blue" onclick="selectPostitColor('blue')" class="w-6 h-6 rounded-full bg-sky-200 border-2 border-transparent focus:outline-none transition-transform"></button>
                         </div>
                     </div>
                     <input type="hidden" id="stepColor" value="yellow">
                     <textarea id="stepNote" rows="2" placeholder="Dicas de ingressos, restaurante..." 
-                        class="w-full px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-stone-800 focus:outline-none text-sm font-handwriting text-lg"></textarea>
+                        class="w-full px-3 py-2 rounded-xl bg-amber-100/80 border border-amber-200 text-amber-950 focus:outline-none text-base font-handwriting transition-colors"></textarea>
                 </div>
 
                 <div class="pt-2 flex gap-3">
-                    <button type="button" onclick="closeModal()" class="flex-1 py-2.5 border border-stone-200 text-stone-600 font-bold rounded-xl text-xs hover:bg-stone-50 transition">
+                    <button type="button" onclick="closeModal()" class="flex-1 py-3 border border-stone-200 text-stone-600 font-bold rounded-xl text-xs hover:bg-stone-50 transition">
                         Cancelar
                     </button>
-                    <button type="submit" class="flex-1 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl text-xs transition">
+                    <button type="submit" class="flex-1 py-3 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl text-xs transition">
                         Salvar Passo
                     </button>
                 </div>
@@ -418,9 +425,37 @@
         </div>
     </div>
 
+    <!-- Modal de Foto Ampliada e Curtidas -->
+    <div id="photoViewerModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 p-3 sm:p-6">
+        <div class="relative max-w-sm sm:max-w-md w-full bg-stone-900 rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-stone-800 transform scale-95 transition-transform duration-300">
+            <button onclick="closePhotoViewer()" class="absolute top-3 right-3 z-20 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-xs">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+
+            <div class="relative w-full aspect-square bg-black flex items-center justify-center overflow-hidden">
+                <img id="viewerImage" src="" class="w-full h-full object-contain">
+            </div>
+
+            <div class="p-4 bg-stone-900 text-white flex items-center justify-between border-t border-stone-800">
+                <div class="flex items-center gap-2.5">
+                    <div id="viewerAuthorAvatar" class="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center text-xs font-bold overflow-hidden"></div>
+                    <div>
+                        <p id="viewerAuthorName" class="text-xs font-bold text-white leading-tight">Viajante</p>
+                        <p class="text-[10px] text-stone-400">Enviada no Roteiro</p>
+                    </div>
+                </div>
+
+                <button id="viewerLikeBtn" onclick="toggleLikeCurrentPhoto()" class="flex items-center gap-2 bg-stone-800 hover:bg-stone-700 active:scale-95 text-white px-4 py-2 rounded-xl border border-stone-700 transition">
+                    <i id="viewerLikeIcon" class="fa-regular fa-heart text-amber-500"></i>
+                    <span id="viewerLikeCount" class="text-xs font-bold">0</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal da Colagem Story -->
-    <div id="collageModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md opacity-0 pointer-events-none transition-opacity duration-300 p-2 sm:p-4">
-        <div class="bg-white border border-stone-200 w-full max-w-sm rounded-3xl p-4 shadow-2xl flex flex-col max-h-[95vh] text-stone-800">
+    <div id="collageModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 p-2 sm:p-4">
+        <div class="bg-white border border-stone-200 w-full max-w-sm rounded-3xl p-4 shadow-2xl flex flex-col max-h-[95vh] text-stone-800 transform scale-95 transition-transform duration-300">
             
             <div class="flex justify-between items-center mb-2 pb-2 border-b border-stone-100">
                 <div class="flex items-center gap-2">
@@ -483,30 +518,28 @@
         ];
 
         let tripTitle = localStorage.getItem('scavenger_trip_title') || 'Roteiro SP';
+        let tripSubtitle = localStorage.getItem('scavenger_trip_subtitle') || 'Roteiro Colaborativo';
         window.steps = [];
         let currentEditingPhotos = [];
+        let activeViewerPhoto = null; // Guardar foto aberta no modal ampliado
 
-        // Estado do Perfil Atual
-        let userProfile = {
-            name: '',
-            avatar: ''
-        };
+        let userProfile = { name: '', avatar: '' };
 
         const colorClasses = {
-            yellow: { bg: 'bg-amber-100/90', border: 'border-amber-200', text: 'text-amber-950', pin: 'bg-amber-500' },
-            green: { bg: 'bg-emerald-100/90', border: 'border-emerald-200', text: 'text-emerald-950', pin: 'bg-emerald-500' },
-            pink: { bg: 'bg-rose-100/90', border: 'border-rose-200', text: 'text-rose-950', pin: 'bg-rose-500' },
-            blue: { bg: 'bg-sky-100/90', border: 'border-sky-200', text: 'text-sky-950', pin: 'bg-sky-500' }
+            yellow: { bg: 'bg-amber-100/90', border: 'border-amber-200', text: 'text-amber-950', textarea: 'bg-amber-100/80 border-amber-200 text-amber-950' },
+            green: { bg: 'bg-emerald-100/90', border: 'border-emerald-200', text: 'text-emerald-950', textarea: 'bg-emerald-100/80 border-emerald-200 text-emerald-950' },
+            pink: { bg: 'bg-rose-100/90', border: 'border-rose-200', text: 'text-rose-950', textarea: 'bg-rose-100/80 border-rose-200 text-rose-950' },
+            blue: { bg: 'bg-sky-100/90', border: 'border-sky-200', text: 'text-sky-950', textarea: 'bg-sky-100/80 border-sky-200 text-sky-950' }
         };
 
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('tripTitleDisplay').innerText = tripTitle;
+            document.getElementById('tripSubtitleDisplay').innerText = tripSubtitle;
             loadUserProfile();
             loadSteps();
             render();
         });
 
-        // Gerenciamento de Perfil
         function loadUserProfile() {
             const savedProfile = localStorage.getItem('scavenger_user_profile');
             if (savedProfile) {
@@ -547,7 +580,8 @@
         }
 
         function showWelcomeModal() {
-            document.getElementById('welcomeModal').classList.remove('pointer-events-none', 'opacity-0');
+            const modal = document.getElementById('welcomeModal');
+            modal.classList.add('modal-active');
         }
 
         function saveInitialProfile(e) {
@@ -556,16 +590,16 @@
             if (!inputName) return;
             userProfile.name = inputName;
             saveUserProfile();
-            document.getElementById('welcomeModal').classList.add('pointer-events-none', 'opacity-0');
+            document.getElementById('welcomeModal').classList.remove('modal-active');
         }
 
         function openProfileModal() {
             updateUserHeaderUI();
-            document.getElementById('profileModal').classList.remove('pointer-events-none', 'opacity-0');
+            document.getElementById('profileModal').classList.add('modal-active');
         }
 
         function closeProfileModal() {
-            document.getElementById('profileModal').classList.add('pointer-events-none', 'opacity-0');
+            document.getElementById('profileModal').classList.remove('modal-active');
         }
 
         function handleAvatarUpload(event) {
@@ -614,6 +648,15 @@
                 tripTitle = newTitle.trim();
                 localStorage.setItem('scavenger_trip_title', tripTitle);
                 document.getElementById('tripTitleDisplay').innerText = tripTitle;
+            }
+        }
+
+        function editTripSubtitle() {
+            const newSub = prompt('Subtítulo do Roteiro:', tripSubtitle);
+            if (newSub && newSub.trim()) {
+                tripSubtitle = newSub.trim();
+                localStorage.setItem('scavenger_trip_subtitle', tripSubtitle);
+                document.getElementById('tripSubtitleDisplay').innerText = tripSubtitle;
             }
         }
 
@@ -682,7 +725,7 @@
 
                         ${renderPhotoStack(step.photos || [], step.id)}
 
-                        <!-- Checklist de Fotos -->
+                        <!-- Checklist -->
                         <div class="my-3 bg-stone-50 rounded-xl p-2.5 border border-stone-100">
                             <div class="flex items-center justify-between mb-1.5">
                                 <span class="text-[10px] font-bold uppercase text-amber-800">📸 O que Fotografar:</span>
@@ -716,29 +759,29 @@
                             </div>
 
                             <div class="grid grid-cols-3 gap-2">
-                                ${(step.groupPhotos || []).map(gp => `
-                                    <div class="relative group aspect-square rounded-xl overflow-hidden border border-stone-200 bg-stone-100">
+                                ${(step.groupPhotos || []).map(gp => {
+                                    const likesCount = (gp.likes || []).length;
+                                    return `
+                                    <div class="relative group aspect-square rounded-xl overflow-hidden border border-stone-200 bg-stone-100 cursor-pointer" onclick="openPhotoViewer('${step.id}', '${gp.id}')">
                                         <img src="${escapeHtml(gp.url)}" class="w-full h-full object-cover">
                                         
                                         <div class="absolute bottom-1 left-1 bg-black/60 text-white px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 backdrop-blur-xs">
                                             ${gp.authorAvatar ? `<img src="${gp.authorAvatar}" class="w-3 h-3 rounded-full object-cover">` : '<i class="fa-solid fa-user text-[8px]"></i>'}
-                                            <span class="truncate max-w-[50px]">${escapeHtml(gp.authorName || 'Viajante')}</span>
+                                            <span class="truncate max-w-[40px]">${escapeHtml(gp.authorName || 'Viajante')}</span>
                                         </div>
 
-                                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                                            <a href="${escapeHtml(gp.url)}" download="foto-viagem.png" class="w-7 h-7 rounded-full bg-white/90 text-stone-800 flex items-center justify-center text-xs hover:bg-white" title="Baixar Foto">
-                                                <i class="fa-solid fa-download"></i>
-                                            </a>
-                                            <button onclick="deleteGroupPhoto('${step.id}', '${gp.id}')" class="w-7 h-7 rounded-full bg-rose-500 text-white flex items-center justify-center text-xs hover:bg-rose-600" title="Apagar Foto">
-                                                <i class="fa-solid fa-trash-can"></i>
-                                            </button>
-                                        </div>
+                                        ${likesCount > 0 ? `
+                                            <div class="absolute top-1 right-1 bg-amber-500/90 text-white px-1.5 py-0.5 rounded-full text-[9px] font-bold flex items-center gap-1 backdrop-blur-xs">
+                                                <i class="fa-solid fa-heart text-[8px]"></i> ${likesCount}
+                                            </div>
+                                        ` : ''}
                                     </div>
-                                `).join('')}
+                                `;
+                                }).join('')}
                             </div>
                         </div>
 
-                        <!-- Comentários com identificação por Usuário -->
+                        <!-- Comentários -->
                         <div class="mt-3 pt-2 border-t border-stone-100">
                             <div class="space-y-1.5 mb-2">
                                 ${(step.comments || []).map(c => `
@@ -798,6 +841,78 @@
             }, 250);
         }
 
+        // Modal de Visualização Ampliada da Foto com Curtidas
+        function openPhotoViewer(stepId, photoId) {
+            const step = window.steps.find(s => s.id === stepId);
+            if (!step || !step.groupPhotos) return;
+
+            const photo = step.groupPhotos.find(p => p.id === photoId);
+            if (!photo) return;
+
+            activeViewerPhoto = { stepId, photoId };
+
+            document.getElementById('viewerImage').src = photo.url;
+            document.getElementById('viewerAuthorName').innerText = photo.authorName || 'Viajante';
+
+            const avatarContainer = document.getElementById('viewerAuthorAvatar');
+            if (photo.authorAvatar) {
+                avatarContainer.innerHTML = `<img src="${photo.authorAvatar}" class="w-full h-full object-cover">`;
+            } else {
+                avatarContainer.innerText = (photo.authorName || 'V').substring(0, 1).toUpperCase();
+            }
+
+            updateViewerLikesUI(photo);
+
+            const modal = document.getElementById('photoViewerModal');
+            modal.classList.add('modal-active');
+        }
+
+        function closePhotoViewer() {
+            const modal = document.getElementById('photoViewerModal');
+            modal.classList.remove('modal-active');
+            activeViewerPhoto = null;
+        }
+
+        function updateViewerLikesUI(photo) {
+            const myUid = window.currentUser ? window.currentUser.uid : 'anonimo';
+            const likes = photo.likes || [];
+            const hasLiked = likes.includes(myUid);
+
+            const icon = document.getElementById('viewerLikeIcon');
+            const count = document.getElementById('viewerLikeCount');
+
+            count.innerText = likes.length;
+            if (hasLiked) {
+                icon.className = "fa-solid fa-heart text-rose-500 scale-110 transition-transform";
+            } else {
+                icon.className = "fa-regular fa-heart text-amber-500";
+            }
+        }
+
+        function toggleLikeCurrentPhoto() {
+            if (!activeViewerPhoto) return;
+            const myUid = window.currentUser ? window.currentUser.uid : 'anonimo';
+            
+            const step = window.steps.find(s => s.id === activeViewerPhoto.stepId);
+            if (!step || !step.groupPhotos) return;
+
+            const photo = step.groupPhotos.find(p => p.id === activeViewerPhoto.photoId);
+            if (!photo) return;
+
+            if (!photo.likes) photo.likes = [];
+
+            const index = photo.likes.indexOf(myUid);
+            if (index > -1) {
+                photo.likes.splice(index, 1);
+            } else {
+                photo.likes.push(myUid);
+            }
+
+            saveSteps();
+            updateViewerLikesUI(photo);
+            render();
+        }
+
         function previewStepPhotos(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
@@ -848,22 +963,14 @@
                         url: e.target.result,
                         authorName: userProfile.name,
                         authorAvatar: userProfile.avatar || '',
-                        authorUid: window.currentUser ? window.currentUser.uid : ''
+                        authorUid: window.currentUser ? window.currentUser.uid : '',
+                        likes: []
                     });
                     saveSteps();
                     render();
                 };
                 reader.readAsDataURL(file);
             });
-        }
-
-        function deleteGroupPhoto(stepId, photoId) {
-            const step = window.steps.find(s => s.id === stepId);
-            if (step && step.groupPhotos) {
-                step.groupPhotos = step.groupPhotos.filter(p => p.id !== photoId);
-                saveSteps();
-                render();
-            }
         }
 
         function toggleChecklistItem(stepId, itemId) {
@@ -941,11 +1048,11 @@
             }
 
             const modal = document.getElementById('collageModal');
-            modal.classList.remove('pointer-events-none', 'opacity-0');
+            modal.classList.add('modal-active');
         }
 
         function closeCollageModal() {
-            document.getElementById('collageModal').classList.add('pointer-events-none', 'opacity-0');
+            document.getElementById('collageModal').classList.remove('modal-active');
         }
 
         function downloadCollage() {
@@ -975,22 +1082,39 @@
                     document.getElementById('stepMapsUrl').value = step.mapsUrl || '';
                     document.getElementById('stepChecklist').value = (step.checklist || []).map(c => c.text).join('\n');
                     document.getElementById('stepNote').value = step.note || '';
+                    selectPostitColor(step.color || 'yellow');
                     currentEditingPhotos = [...(step.photos || [])];
                 }
             } else {
                 document.getElementById('modalTitleText').innerText = "Cadastrar Novo Passo";
+                selectPostitColor('yellow');
             }
 
             renderStepPhotosPreview();
-            modal.classList.remove('pointer-events-none', 'opacity-0');
+            modal.classList.add('modal-active');
         }
 
         function closeModal() {
-            document.getElementById('stepModal').classList.add('pointer-events-none', 'opacity-0');
+            document.getElementById('stepModal').classList.remove('modal-active');
         }
 
         function selectPostitColor(color) {
             document.getElementById('stepColor').value = color;
+            const textarea = document.getElementById('stepNote');
+
+            // Atualiza classe do textarea do Post-it
+            const theme = colorClasses[color] || colorClasses.yellow;
+            textarea.className = `w-full px-3 py-2 rounded-xl border font-handwriting text-base transition-colors focus:outline-none ${theme.textarea}`;
+
+            // Atualiza borda de seleção nos botões de cor
+            const buttons = document.querySelectorAll('#colorPicker button');
+            buttons.forEach(btn => {
+                if (btn.dataset.color === color) {
+                    btn.classList.add('border-4', 'border-stone-800', 'scale-110');
+                } else {
+                    btn.classList.remove('border-4', 'border-stone-800', 'scale-110');
+                }
+            });
         }
 
         function handleSaveStep(event) {
