@@ -22,36 +22,38 @@
     <!-- Firebase App & Firestore via CDN (Módulo ES) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Configurações do Firebase com fallback inteligente
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'roteiro-viagem-app';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : { apiKey: "demo-key", authDomain: "demo.firebaseapp.com", projectId: "demo-project" };
+        // Configurações Reais do Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyD54p2WxB8Fp1mZFUNtovyTixUdSwD7oZE",
+            authDomain: "roteiro-sp-a4f9f.firebaseapp.com",
+            projectId: "roteiro-sp-a4f9f",
+            storageBucket: "roteiro-sp-a4f9f.firebasestorage.app",
+            messagingSenderId: "126130634893",
+            appId: "1:126130634893:web:b63890eda3154a6aa7a2c4",
+            measurementId: "G-05ND40JVHL"
+        };
 
         let db = null;
         let auth = null;
-        let currentUser = null;
+        window.currentUser = null;
 
-        // Disponibiliza no escopo global para interação com os scripts legados
+        // Inicialização do Firebase Sync
         window.initFirebaseSync = async function() {
             try {
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
+                // Autentica o usuário de forma anônima garantindo ID único para cada dispositivo/integrante
+                onAuthStateChanged(auth, async (user) => {
                     if (user) {
-                        currentUser = user;
+                        window.currentUser = user;
                         window.setupRealtimeSync();
+                    } else {
+                        await signInAnonymously(auth);
                     }
                 });
             } catch (err) {
@@ -59,11 +61,11 @@
             }
         };
 
-        // Sincronização de Perfis e Passos no Firestore
+        // Sincronização dos Passos e Dados em Tempo Real no Firestore
         window.setupRealtimeSync = function() {
-            if (!db || !currentUser) return;
+            if (!db) return;
 
-            const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'steps');
+            const collectionRef = collection(db, 'roteiro_passos');
 
             onSnapshot(collectionRef, (snapshot) => {
                 const remoteSteps = [];
@@ -72,6 +74,8 @@
                 });
 
                 if (remoteSteps.length > 0) {
+                    // Ordena por data/criação
+                    remoteSteps.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                     window.steps = remoteSteps;
                     window.saveStepsLocally();
                     window.render();
@@ -82,26 +86,31 @@
         };
 
         window.saveStepToCloud = async function(step) {
-            if (!db || !currentUser) return;
+            if (!db) return;
             try {
-                const stepRef = doc(db, 'artifacts', appId, 'public', 'data', 'steps', step.id);
-                await setDoc(stepRef, step, { merge: true });
+                const stepRef = doc(db, 'roteiro_passos', step.id);
+                const stepData = {
+                    ...step,
+                    updatedBy: window.currentUser ? window.currentUser.uid : 'anonimo',
+                    createdAt: step.createdAt || Date.now()
+                };
+                await setDoc(stepRef, stepData, { merge: true });
             } catch (e) {
                 console.error("Erro ao salvar passo no Firebase:", e);
             }
         };
 
         window.deleteStepFromCloud = async function(stepId) {
-            if (!db || !currentUser) return;
+            if (!db) return;
             try {
-                const stepRef = doc(db, 'artifacts', appId, 'public', 'data', 'steps', stepId);
-                await deleteDoc(stepRef, stepRef);
+                const stepRef = doc(db, 'roteiro_passos', stepId);
+                await deleteDoc(stepRef);
             } catch (e) {
                 console.error("Erro ao deletar do Firebase:", e);
             }
         };
 
-        // Inicia Firebase após carregamento
+        // Inicia Firebase
         window.initFirebaseSync();
     </script>
 
@@ -160,6 +169,15 @@
             background-size: 30px 30px;
             background-position: 0 0, 15px 15px;
         }
+
+        @keyframes pulseGlow {
+            0%, 100% { transform: scale(1); box-shadow: 0 10px 25px -5px rgba(217, 119, 6, 0.5); }
+            50% { transform: scale(1.05); box-shadow: 0 15px 30px -5px rgba(217, 119, 6, 0.7); }
+        }
+
+        .btn-plus-animated {
+            animation: pulseGlow 3s infinite ease-in-out;
+        }
     </style>
 </head>
 <body class="h-full flex flex-col font-sans bg-stone-100 text-stone-800 antialiased">
@@ -175,7 +193,7 @@
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-1.5 group cursor-pointer" onclick="editTripTitle()">
-                            <h1 id="tripTitleDisplay" class="font-black text-base sm:text-lg text-stone-900 truncate tracking-tight">EuroTrip 2027</h1>
+                            <h1 id="tripTitleDisplay" class="font-black text-base sm:text-lg text-stone-900 truncate tracking-tight">Roteiro SP</h1>
                             <i class="fa-solid fa-pen text-xs text-amber-600 opacity-80 group-hover:opacity-100"></i>
                         </div>
                         <p class="text-[11px] text-stone-500 font-semibold flex items-center gap-1">
@@ -198,17 +216,13 @@
                     </div>
                     <div class="text-left leading-tight">
                         <p class="text-[9px] uppercase tracking-wider font-extrabold text-stone-400">Viajante</p>
-                        <p id="headerUserName" class="text-xs font-bold text-stone-800 truncate max-w-[100px]">Carregando...</p>
+                        <p id="headerUserName" class="text-xs font-bold text-stone-800 truncate max-w-[120px]">Carregando...</p>
                     </div>
                     <i class="fa-solid fa-chevron-down text-[10px] text-stone-400 ml-0.5"></i>
                 </button>
 
                 <div class="flex items-center gap-1.5">
-                    <button onclick="openGithubInstructions()" class="flex items-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-[11px] px-2.5 py-1.5 rounded-xl border border-stone-200 transition" title="Como subir no GitHub Pages">
-                        <i class="fa-brands fa-github text-xs"></i>
-                        <span class="hidden sm:inline">GitHub</span>
-                    </button>
-                    <button onclick="generateCollage()" class="flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 active:scale-95 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition">
+                    <button onclick="generateCollage()" class="flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 active:scale-95 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition">
                         <i class="fa-solid fa-images text-amber-400"></i>
                         <span>Gerar Story</span>
                     </button>
@@ -279,31 +293,6 @@
         </div>
     </div>
 
-    <!-- Modal de Instruções do GitHub Pages -->
-    <div id="githubModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs opacity-0 pointer-events-none transition-opacity duration-300 p-4">
-        <div class="bg-white border border-stone-200 w-full max-w-md rounded-3xl p-5 shadow-2xl text-stone-800 space-y-4">
-            <div class="flex justify-between items-center border-b border-stone-100 pb-2">
-                <h3 class="font-bold text-base text-stone-900 flex items-center gap-2">
-                    <i class="fa-brands fa-github text-amber-600"></i> Publicar no GitHub Pages
-                </h3>
-                <button onclick="closeGithubInstructions()" class="w-7 h-7 rounded-full bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </div>
-            <div class="text-xs text-stone-600 space-y-2.5">
-                <p>Siga estes passos para disponibilizar este arquivo HTML para os outros 3 integrantes acessarem via link:</p>
-                <ol class="list-decimal pl-4 space-y-1.5 font-medium">
-                    <li>Crie um repositório no <strong>GitHub</strong> (ex: <code class="bg-stone-100 px-1 rounded">viagem-2027</code>).</li>
-                    <li>Faça o upload deste arquivo renomeado exatamente para <code class="bg-stone-100 px-1 rounded">index.html</code>.</li>
-                    <li>No GitHub, vá em <strong>Settings &gt; Pages</strong>.</li>
-                    <li>Em <em>Source</em>, selecione a branch <code class="bg-stone-100 px-1 rounded">main</code> e clique em <strong>Save</strong>.</li>
-                    <li>Envie o link gerado (ex: <code class="bg-stone-100 px-1 text-amber-700 rounded">https://seu-usuario.github.io/viagem-2027/</code>) no grupo da viagem!</li>
-                </ol>
-            </div>
-            <button onclick="closeGithubInstructions()" class="w-full py-2.5 bg-stone-900 text-white font-bold rounded-xl text-xs">Entendido!</button>
-        </div>
-    </div>
-
     <!-- Conteúdo Principal -->
     <main class="flex-1 max-w-md w-full mx-auto px-4 pt-4 pb-28 relative">
         
@@ -327,7 +316,7 @@
                 <i class="fa-solid fa-map-location-dot"></i>
             </div>
             <h3 class="text-base font-bold text-stone-800">Seu roteiro ainda está vazio!</h3>
-            <p class="text-xs text-stone-500 mt-1 max-w-xs mx-auto">Adicione os destinos e as listas de fotos para os 4 viajantes.</p>
+            <p class="text-xs text-stone-500 mt-1 max-w-xs mx-auto">Adicione os destinos e as listas de fotos para o grupo de viajantes.</p>
             <button onclick="openModal()" class="mt-4 inline-flex items-center gap-2 bg-amber-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs hover:bg-amber-700 transition">
                 <i class="fa-solid fa-plus"></i> Criar Primeiro Passo
             </button>
@@ -337,10 +326,10 @@
 
     </main>
 
-    <!-- Botão Flutuante (+ Passo) -->
+    <!-- Botão Flutuante (+ Passo) Destacado e Estilizado -->
     <div class="fixed bottom-6 right-6 z-30">
-        <button onclick="openModal()" class="w-13 h-13 bg-amber-600 hover:bg-amber-700 active:scale-90 text-white font-bold rounded-full shadow-lg flex items-center justify-center transition text-xl border-2 border-white">
-            <i class="fa-solid fa-plus"></i>
+        <button onclick="openModal()" class="btn-plus-animated w-16 h-16 bg-gradient-to-tr from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 active:scale-90 text-white font-bold rounded-full shadow-2xl flex items-center justify-center transition border-2 border-white/90">
+            <i class="fa-solid fa-plus text-2xl"></i>
         </button>
     </div>
 
@@ -362,7 +351,7 @@
 
                 <div>
                     <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Nome do Local ou Parada *</label>
-                    <input type="text" id="stepTitle" required placeholder="Ex: Torre Eiffel, Coliseu, Praia de Pipa..." 
+                    <input type="text" id="stepTitle" required placeholder="Ex: Parque Ibirapuera, Avenida Paulista..." 
                         class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-sm">
                 </div>
 
@@ -394,7 +383,7 @@
                         class="w-full px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 focus:outline-none focus:border-amber-500 text-xs"></textarea>
                 </div>
 
-                <!-- Seleção de Fotos do Dispositivo (Sem URLs) -->
+                <!-- Seleção de Fotos do Dispositivo -->
                 <div>
                     <label class="block text-xs font-bold text-stone-600 uppercase mb-1">Fotos do Passo (Do Dispositivo)</label>
                     <input type="file" id="stepPhotoFiles" accept="image/*" multiple onchange="previewStepPhotos(event)"
@@ -447,14 +436,14 @@
                 <div id="collageCanvas" class="w-[310px] h-[550px] wavy-bg p-4 flex flex-col justify-between relative overflow-hidden shrink-0">
                     <div class="text-center pt-2 relative z-10">
                         <span class="text-[9px] font-extrabold uppercase tracking-widest text-amber-800">MEMÓRIAS DA VIAGEM</span>
-                        <h2 id="storyTripTitle" class="font-serif text-2xl font-bold text-stone-900 italic mt-0.5">EuroTrip 2027</h2>
+                        <h2 id="storyTripTitle" class="font-serif text-2xl font-bold text-stone-900 italic mt-0.5">Roteiro SP</h2>
                         <div class="w-8 h-0.5 bg-amber-600 mx-auto mt-1 rounded-full"></div>
                     </div>
 
                     <div id="storyMosaicGrid" class="relative my-auto h-[360px] w-full flex items-center justify-center"></div>
 
                     <div class="text-center pb-1 relative z-10 flex items-center justify-between border-t border-stone-300/60 pt-2">
-                        <span class="font-serif italic text-[11px] text-stone-500">Gui • Ana • Leo • Sofi</span>
+                        <span class="font-serif italic text-[11px] text-stone-500">Galera da Viagem</span>
                         <span class="text-[9px] uppercase font-bold tracking-wider text-amber-800">Roteiro Interativo</span>
                     </div>
                 </div>
@@ -469,36 +458,31 @@
         </div>
     </div>
 
-    <!-- Script JavaScript -->
+    <!-- Script JavaScript da Aplicação -->
     <script>
         const defaultSteps = [
             {
                 id: '1',
-                title: 'Praia de Pipa & Falésias',
+                title: 'Parque Ibirapuera',
                 date: '2026-11-10',
                 time: '09:00',
-                mapsUrl: 'https://maps.google.com/?q=Praia+de+Pipa',
+                mapsUrl: 'https://maps.google.com/?q=Parque+Ibirapuera',
                 completed: false,
                 color: 'yellow',
                 photos: [
-                    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
-                    'https://images.unsplash.com/photo-1519046904884-53103b34b206?auto=format&fit=crop&w=800&q=80'
+                    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80'
                 ],
                 checklist: [
-                    { id: 'c1', text: 'Foto com o chapéu de palha', checked: true },
-                    { id: 'c2', text: 'Selfie com os golfinhos', checked: false }
+                    { id: 'c1', text: 'Foto perto do lago', checked: true },
+                    { id: 'c2', text: 'Selfie com o grupo', checked: false }
                 ],
-                note: '🌴 Buggy agendado pras 10h! Levar protetor solar.',
-                groupPhotos: [
-                    { id: 'gp1', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80', authorName: 'Ana', authorAvatar: '' }
-                ],
-                comments: [
-                    { id: 'cm1', authorName: 'Leo', authorAvatar: '', text: 'Lugar maravilhoso demais!' }
-                ]
+                note: '🌴 Caminhada matinal e água de coco!',
+                groupPhotos: [],
+                comments: []
             }
         ];
 
-        let tripTitle = localStorage.getItem('scavenger_trip_title') || 'EuroTrip 2027';
+        let tripTitle = localStorage.getItem('scavenger_trip_title') || 'Roteiro SP';
         window.steps = [];
         let currentEditingPhotos = [];
 
@@ -522,7 +506,7 @@
             render();
         });
 
-        // Gerenciamento de Perfil do Usuário
+        // Gerenciamento de Perfil
         function loadUserProfile() {
             const savedProfile = localStorage.getItem('scavenger_user_profile');
             if (savedProfile) {
@@ -553,7 +537,6 @@
                 headerAvatar.innerHTML = `<span id="headerUserInitials">${initials}</span>`;
             }
 
-            // Atualiza modal de perfil também
             const modalAvatar = document.getElementById('modalProfileAvatar');
             if (userProfile.avatar) {
                 modalAvatar.innerHTML = `<img src="${userProfile.avatar}" class="w-full h-full object-cover">`;
@@ -651,14 +634,6 @@
             updateStats();
         }
 
-        function openGithubInstructions() {
-            document.getElementById('githubModal').classList.remove('pointer-events-none', 'opacity-0');
-        }
-
-        function closeGithubInstructions() {
-            document.getElementById('githubModal').classList.add('pointer-events-none', 'opacity-0');
-        }
-
         function createStepCard(step, index, total) {
             const wrapper = document.createElement('div');
             wrapper.className = 'relative mb-8 last:mb-0';
@@ -730,7 +705,7 @@
                             </div>
                         ` : ''}
 
-                        <!-- Galeria de Fotos Subidas pelos Viajantes -->
+                        <!-- Galeria de Fotos dos Viajantes -->
                         <div class="mt-3 pt-2 border-t border-stone-100">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-[11px] font-bold text-stone-600">Fotos dos Viajantes (${(step.groupPhotos || []).length})</span>
@@ -745,7 +720,6 @@
                                     <div class="relative group aspect-square rounded-xl overflow-hidden border border-stone-200 bg-stone-100">
                                         <img src="${escapeHtml(gp.url)}" class="w-full h-full object-cover">
                                         
-                                        <!-- Badge com foto/nome de quem subiu -->
                                         <div class="absolute bottom-1 left-1 bg-black/60 text-white px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 backdrop-blur-xs">
                                             ${gp.authorAvatar ? `<img src="${gp.authorAvatar}" class="w-3 h-3 rounded-full object-cover">` : '<i class="fa-solid fa-user text-[8px]"></i>'}
                                             <span class="truncate max-w-[50px]">${escapeHtml(gp.authorName || 'Viajante')}</span>
@@ -764,7 +738,7 @@
                             </div>
                         </div>
 
-                        <!-- Comentários -->
+                        <!-- Comentários com identificação por Usuário -->
                         <div class="mt-3 pt-2 border-t border-stone-100">
                             <div class="space-y-1.5 mb-2">
                                 ${(step.comments || []).map(c => `
@@ -873,7 +847,8 @@
                         id: Date.now().toString() + Math.random().toString(36).substr(2, 4),
                         url: e.target.result,
                         authorName: userProfile.name,
-                        authorAvatar: userProfile.avatar || ''
+                        authorAvatar: userProfile.avatar || '',
+                        authorUid: window.currentUser ? window.currentUser.uid : ''
                     });
                     saveSteps();
                     render();
@@ -912,7 +887,8 @@
                 step.comments.push({ 
                     id: Date.now().toString(), 
                     authorName: userProfile.name, 
-                    authorAvatar: userProfile.avatar || '', 
+                    authorAvatar: userProfile.avatar || '',
+                    authorUid: window.currentUser ? window.currentUser.uid : '',
                     text: input.value.trim() 
                 });
                 input.value = '';
