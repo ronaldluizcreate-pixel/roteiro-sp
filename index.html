@@ -23,11 +23,11 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Firebase App & Firestore via CDN -->
+    <!-- Firebase App, Auth e Realtime Database via CDN -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, collection, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyD54p2WxB8Fp1mZFUNtovyTixUdSwD7oZE",
@@ -48,7 +48,7 @@
             try {
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
-                db = getFirestore(app);
+                db = getDatabase(app);
 
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
@@ -72,45 +72,46 @@
 
         window.setupRealtimeSync = function() {
             if (!db) return;
-            if (unsubscribeSync) unsubscribeSync();
 
-            const collectionRef = collection(db, 'roteiro_passos');
+            const stepsRef = ref(db, 'roteiro_passos');
 
-            unsubscribeSync = onSnapshot(collectionRef, (snapshot) => {
-                const remoteSteps = [];
-                snapshot.forEach(docSnap => {
-                    remoteSteps.push({ id: docSnap.id, ...docSnap.data() });
-                });
-
-                if (remoteSteps.length > 0) {
+            onValue(stepsRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const remoteSteps = Object.keys(data).map(key => ({
+                        id: key,
+                        ...data[key]
+                    }));
                     remoteSteps.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
                     window.steps = remoteSteps;
                     window.saveStepsLocally();
                     window.render();
                 } else if (window.steps && window.steps.length > 0) {
-                    // Se estiver vazio na nuvem, faz o upload dos dados locais iniciais
+                    // Se estiver vazio na nuvem, faz upload dos passos locais iniciais
                     window.steps.forEach(step => window.saveStepToCloud(step));
+                } else {
+                    window.steps = [];
+                    window.saveStepsLocally();
+                    window.render();
                 }
             }, (error) => {
-                console.error("Erro de permissão ou leitura no Firestore:", error);
-                if (error.code === 'permission-denied') {
-                    alert("O Firebase recusou a gravação! Verifique as Regras de Segurança no Firestore (veja o passo a passo de correção).");
-                }
+                console.error("Erro no Realtime Database:", error);
+                alert("Erro de conexão/permissão no Realtime Database. Verifique as Regras no console do Firebase.");
             });
         };
 
         window.saveStepToCloud = async function(step) {
             if (!db) return;
             try {
-                const stepRef = doc(db, 'roteiro_passos', step.id);
+                const stepRef = ref(db, 'roteiro_passos/' + step.id);
                 const stepData = {
                     ...step,
                     updatedBy: window.currentUser ? window.currentUser.uid : 'anonimo',
                     createdAt: step.createdAt || Date.now()
                 };
-                await setDoc(stepRef, stepData, { merge: true });
+                await set(stepRef, stepData);
             } catch (e) {
-                console.error("Erro ao salvar no Firebase:", e);
+                console.error("Erro ao salvar no Realtime Database:", e);
                 alert("Não foi possível salvar na nuvem: " + e.message);
             }
         };
@@ -118,10 +119,10 @@
         window.deleteStepFromCloud = async function(stepId) {
             if (!db) return;
             try {
-                const stepRef = doc(db, 'roteiro_passos', stepId);
-                await deleteDoc(stepRef);
+                const stepRef = ref(db, 'roteiro_passos/' + stepId);
+                await remove(stepRef);
             } catch (e) {
-                console.error("Erro ao deletar no Firebase:", e);
+                console.error("Erro ao deletar no Realtime Database:", e);
             }
         };
 
